@@ -22,6 +22,7 @@ Covers:
 
 from __future__ import annotations
 
+import os
 import socket
 import time
 from pathlib import Path
@@ -641,3 +642,91 @@ def test_prefix_collision_paths_rejected(hardened_app, tmp_path: Path, endpoint)
             collision_file.unlink()
         if collision_dir.exists():
             collision_dir.rmdir()
+
+
+# =============================================================================
+# 14. SERVER-SIDE ALLOWLIST REGISTRY SECURITY TESTS
+# =============================================================================
+
+@pytest.mark.parametrize("endpoint", [
+    "/api/ns3/import",
+    "/api/cooja/import",
+    "/api/pcap/replay",
+])
+@pytest.mark.parametrize("missing_path", [
+    "dataset/nonexistent_file_12345.csv",
+    "dataset/nonexistent_file_12345.pcap",
+    "nonexistent_file_12345.csv",
+    "nonexistent_file_12345.pcap",
+])
+def test_missing_allowlist_entries_rejected(hardened_app, endpoint, missing_path):
+    """Paths not present in the server allowlist registry return 400 without exposing paths."""
+    _, app = hardened_app
+    with app.test_client() as client:
+        _login_as(client, "admin", ROLE_ADMIN)
+
+        res = client.post(endpoint, json={"path": missing_path})
+        assert res.status_code == 400
+        error_msg = res.get_json()["error"]
+        assert "not a regular file" in error_msg or "outside approved directories" in error_msg
+        assert "/etc" not in error_msg
+        assert "/home" not in error_msg
+
+
+def test_directory_symlink_pointing_outside_approved_roots(hardened_app, tmp_path: Path):
+    """Directory symlinks pointing outside approved roots are excluded and lookups rejected."""
+    runtime, app = hardened_app
+    outside_dir = tmp_path / "outside_directory"
+    outside_dir.mkdir(parents=True, exist_ok=True)
+    outside_file = outside_dir / "secret_data.csv"
+    outside_file.write_text("header,val\n1,2\n")
+
+    dir_symlink = runtime.settings.trace_dir / "leaked_symlink_dir"
+    try:
+        dir_symlink.symlink_to(outside_dir, target_is_directory=True)
+    except OSError:
+        pytest.skip("Symlink creation not permitted in this environment")
+
+    try:
+        with app.test_client() as client:
+            _login_as(client, "admin", ROLE_ADMIN)
+
+            res = client.post(
+                "/api/ns3/import",
+                json={"path": f"dataset/{dir_symlink.name}/secret_data.csv"}
+            )
+            assert res.status_code == 400
+            assert "outside approved directories" in res.get_json()["error"]
+    finally:
+        if dir_symlink.is_symlink() or dir_symlink.exists():
+            dir_symlink.unlink()
+
+
+def test_raw_input_never_passed_to_filesystem_apis(hardened_app, monkeypatch):
+    """User-supplied path strings are never passed directly to filesystem resolution/stat APIs."""
+    _, app = hardened_app
+    attacker_payload = "../../../../etc/passwd"
+    seen_paths: list[str] = []
+
+    orig_realpath = os.path.realpath
+    def tracking_realpath(path, *args, **kwargs):
+        seen_paths.append(str(path))
+        return orig_realpath(path, *args, **kwargs)
+
+    orig_is_file = Path.is_file
+    def tracking_is_file(self):
+        seen_paths.append(str(self))
+        return orig_is_file(self)
+
+    monkeypatch.setattr(os.path, "realpath", tracking_realpath)
+    monkeypatch.setattr(Path, "is_file", tracking_is_file)
+
+    with app.test_client() as client:
+        _login_as(client, "admin", ROLE_ADMIN)
+
+        res = client.post("/api/ns3/import", json={"path": attacker_payload})
+        assert res.status_code == 400
+
+        # Assert raw user string never touched realpath or is_file
+        assert not any(attacker_payload in p for p in seen_paths)
+        assert not any("/etc/passwd" in p for p in seen_paths)

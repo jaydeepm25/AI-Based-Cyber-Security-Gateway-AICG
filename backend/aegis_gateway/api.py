@@ -123,18 +123,156 @@ def _trace_error_response(prefix: str, error: Exception) -> tuple[Response, int]
     return jsonify({"error": f"{prefix}: {detail}"}), 400
 
 
+def _build_file_registry(
+    allowed_roots: list[Path] | tuple[Path, ...],
+    default_root: Path | None = None,
+    allowed_extensions: tuple[str, ...] | set[str] | list[str] | None = None,
+) -> tuple[dict[str, Path], dict[str, str], set[str]]:
+    """Build a server-side allowlist registry from explicitly approved directories only.
+
+    Discovers files via server directory enumeration, canonicalizes each discovered file,
+    verifies boundary containment within its approved root, and registers the canonical Path.
+
+    Returns:
+        (valid_registry, rejected_ext_registry, leaked_symlink_keys)
+        valid_registry maps allowed lookup keys to prevalidated, canonical Path objects.
+        rejected_ext_registry maps lookup keys to the invalid file extension for known files.
+        leaked_symlink_keys contains lookup keys that correspond to escaping symlinks.
+    """
+    valid_registry: dict[str, Path] = {}
+    rejected_ext_registry: dict[str, str] = {}
+    leaked_symlink_keys: set[str] = set()
+
+    normalized_exts: set[str] | None = None
+    if allowed_extensions is not None:
+        normalized_exts = {
+            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
+            for ext in allowed_extensions
+        }
+
+    # Order roots: process non-default roots first, default_root last,
+    # so that default_root entries take precedence for bare filename keys.
+    ordered_roots: list[Path] = []
+    for r in allowed_roots:
+        if default_root and r != default_root and r not in ordered_roots:
+            ordered_roots.append(r)
+    if default_root and default_root not in ordered_roots:
+        ordered_roots.append(default_root)
+    for r in allowed_roots:
+        if r not in ordered_roots:
+            ordered_roots.append(r)
+
+    for root_obj in ordered_roots:
+        root_real = os.path.realpath(str(root_obj))
+        root_with_sep = root_real if root_real.endswith(os.sep) else root_real + os.sep
+        if not os.path.isdir(root_real):
+            continue
+
+        is_dataset_dir = (
+            os.path.basename(root_real) == "dataset"
+            or getattr(root_obj, "name", "") == "dataset"
+        )
+
+        for current_dir, dirnames, filenames in os.walk(root_real, followlinks=False):
+            # Detect escaping directory symlinks
+            for d in list(dirnames):
+                d_path = os.path.join(current_dir, d)
+                if os.path.islink(d_path):
+                    d_real = os.path.realpath(d_path)
+                    is_d_contained = (d_real == root_real or d_real.startswith(root_with_sep))
+                    if is_d_contained:
+                        try:
+                            is_d_contained = (os.path.commonpath([d_real, root_real]) == root_real)
+                        except ValueError:
+                            is_d_contained = False
+                    if not is_d_contained:
+                        rel_d = os.path.relpath(d_path, root_real).replace("\\", "/")
+                        leaked_symlink_keys.add(d)
+                        leaked_symlink_keys.add(d_path)
+                        leaked_symlink_keys.add(rel_d)
+                        if is_dataset_dir:
+                            leaked_symlink_keys.add(f"dataset/{d}")
+                            leaked_symlink_keys.add(f"dataset/{rel_d}")
+                        dirnames.remove(d)
+
+            # Check if current_dir itself escapes root
+            canonical_current = os.path.realpath(current_dir)
+            if not (canonical_current == root_real or canonical_current.startswith(root_with_sep)):
+                dirnames.clear()
+                continue
+            try:
+                if os.path.commonpath([canonical_current, root_real]) != root_real:
+                    dirnames.clear()
+                    continue
+            except ValueError:
+                dirnames.clear()
+                continue
+
+            for entry_name in filenames:
+                server_entry = os.path.join(current_dir, entry_name)
+                canonical_entry = os.path.realpath(server_entry)
+
+                rel_from_root = os.path.relpath(server_entry, root_real).replace("\\", "/")
+
+                keys = [
+                    entry_name,
+                    server_entry,
+                    canonical_entry,
+                    rel_from_root,
+                ]
+                if is_dataset_dir:
+                    keys.append(f"dataset/{entry_name}")
+                    if rel_from_root != entry_name:
+                        keys.append(f"dataset/{rel_from_root}")
+
+                # Boundary containment check against the approved root
+                is_contained = (
+                    canonical_entry == root_real
+                    or canonical_entry.startswith(root_with_sep)
+                )
+                if is_contained:
+                    try:
+                        is_contained = (os.path.commonpath([canonical_entry, root_real]) == root_real)
+                    except ValueError:
+                        is_contained = False
+
+                if not is_contained:
+                    for k in keys:
+                        leaked_symlink_keys.add(k)
+                    continue
+
+                if not os.path.isfile(canonical_entry):
+                    continue
+
+                canonical_path = Path(canonical_entry)
+                file_suffix = canonical_path.suffix.lower()
+
+                if canonical_path.name != entry_name:
+                    keys.append(canonical_path.name)
+                    if is_dataset_dir:
+                        keys.append(f"dataset/{canonical_path.name}")
+
+                is_valid_ext = (normalized_exts is None or file_suffix in normalized_exts)
+
+                for k in keys:
+                    if is_valid_ext:
+                        valid_registry[k] = canonical_path
+                    else:
+                        rejected_ext_registry[k] = file_suffix
+
+    return valid_registry, rejected_ext_registry, leaked_symlink_keys
+
+
 def resolve_contained_path(
     candidate_path: str | Path | None,
     allowed_roots: list[Path] | tuple[Path, ...],
     default_root: Path | None = None,
     allowed_extensions: tuple[str, ...] | set[str] | list[str] | None = None,
 ) -> Path:
-    """Resolve a candidate path and verify it is strictly contained within at least one allowed root.
+    """Resolve a candidate path using a server-side allowlist registry of prevalidated files.
 
-    Resolves symlinks, relative traversal components (..), and enforces boundary containment.
-    Validates file extension against allowed_extensions if specified.
-    Raises ValueError if path traverses outside approved directories or has an unsupported extension.
-    Raises FileNotFoundError if the target file does not exist or is not a regular file.
+    User-supplied paths are used strictly as lookup keys and NEVER passed to filesystem APIs.
+    The returned Path originates exclusively from server-side directory enumeration.
     """
     if candidate_path is None or not isinstance(candidate_path, (str, Path)):
         raise ValueError("Path must be a valid string")
@@ -150,18 +288,14 @@ def resolve_contained_path(
     if not allowed_roots:
         raise ValueError("No approved directories specified")
 
-    canonical_roots = [os.path.realpath(str(r)) for r in allowed_roots]
-
-    # Rejection of traversal components before any resolution
-    raw_segments = cleaned.replace("\\", "/").split("/")
-    if any(seg == ".." for seg in raw_segments):
+    # Reject traversal sequences upfront via pure string check
+    segments = cleaned.replace("\\", "/").split("/")
+    if any(seg == ".." for seg in segments):
         raise ValueError("Access denied: path is outside approved directories")
 
-    is_abs = os.path.isabs(cleaned)
-    if is_abs:
-        candidate_abs = cleaned
-    else:
-        norm_parts = [p for p in raw_segments if p and p != "."]
+    # Reject nested relative paths upfront via pure string check
+    if not os.path.isabs(cleaned):
+        norm_parts = [p for p in segments if p and p != "."]
         if not norm_parts:
             raise ValueError("Path must not be empty")
 
@@ -169,61 +303,68 @@ def resolve_contained_path(
             filename = norm_parts[1]
             if secure_filename(filename) != filename:
                 raise ValueError("Access denied: path is outside approved directories")
-
-            dataset_root = next(
-                (r for r in canonical_roots if os.path.basename(r) == "dataset"),
-                None,
-            )
-            if dataset_root is None and default_root:
-                d_real = os.path.realpath(str(default_root))
-                if d_real in canonical_roots:
-                    dataset_root = d_real
-            if dataset_root is None:
-                raise ValueError("Access denied: path is outside approved directories")
-            candidate_abs = os.path.join(dataset_root, filename)
-
         elif len(norm_parts) == 1:
             if "/" in cleaned or "\\" in cleaned:
                 raise ValueError("Invalid path: path separators not permitted in filename")
             filename = norm_parts[0]
             if secure_filename(filename) != filename:
                 raise ValueError("Access denied: path is outside approved directories")
-
-            base_root = os.path.realpath(str(default_root)) if default_root else canonical_roots[0]
-            candidate_abs = os.path.join(base_root, filename)
-
         else:
-            # Nested relative path outside approved conventions
             raise ValueError("Access denied: path is outside approved directories")
 
-    # Canonicalize and resolve symlinks without checking file existence yet
-    canonical_candidate = os.path.realpath(candidate_abs)
+    # Build server-side allowlist strictly from approved roots
+    valid_registry, rejected_ext_registry, leaked_symlink_keys = _build_file_registry(
+        allowed_roots=allowed_roots,
+        default_root=default_root,
+        allowed_extensions=allowed_extensions,
+    )
 
-    # Direct, immediate containment guard for each canonical approved root
-    for root in canonical_roots:
-        root_with_sep = root if root.endswith(os.sep) else root + os.sep
-        if canonical_candidate == root or canonical_candidate.startswith(root_with_sep):
-            try:
-                if os.path.commonpath([canonical_candidate, root]) != root:
-                    continue
-            except ValueError:
-                continue
+    # 1. Exact match in server-validated registry
+    if cleaned in valid_registry:
+        return valid_registry[cleaned]
 
-            target_path = Path(canonical_candidate)
-            if not target_path.is_file():
-                raise FileNotFoundError("File not found or not a regular file")
+    # 2. Match in leaked symlink registry (escaping symlinks)
+    if cleaned in leaked_symlink_keys:
+        raise ValueError("Access denied: path is outside approved directories")
 
-            if allowed_extensions is not None:
-                normalized_exts = {
-                    ext.lower() if ext.startswith(".") else f".{ext.lower()}"
-                    for ext in allowed_extensions
-                }
-                if target_path.suffix.lower() not in normalized_exts:
-                    raise ValueError(
-                        f"Unsupported file extension '{target_path.suffix}'. Approved extensions: {', '.join(sorted(normalized_exts))}"
-                    )
+    # 3. Match in rejected extension registry (known file with unsupported extension)
+    if cleaned in rejected_ext_registry:
+        bad_suffix = rejected_ext_registry[cleaned]
+        normalized_exts = {
+            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
+            for ext in (allowed_extensions or ())
+        }
+        raise ValueError(
+            f"Unsupported file extension '{bad_suffix}'. Approved extensions: {', '.join(sorted(normalized_exts))}"
+        )
 
-            return target_path
+    # 4. Determine failure mode without filesystem access
+    canonical_roots = [os.path.realpath(str(r)) for r in allowed_roots]
+    is_inside_root_intent = False
+
+    if os.path.isabs(cleaned):
+        for r_str in canonical_roots:
+            r_sep = r_str if r_str.endswith(os.sep) else r_str + os.sep
+            if cleaned == r_str or cleaned.startswith(r_sep):
+                try:
+                    if os.path.commonpath([cleaned, r_str]) == r_str:
+                        is_inside_root_intent = True
+                        break
+                except ValueError:
+                    pass
+    else:
+        # Check if the relative prefix corresponds to an approved root
+        if norm_parts[0] == "dataset":
+            has_dataset_root = any(
+                os.path.basename(r_str) == "dataset" or getattr(r, "name", "") == "dataset"
+                for r, r_str in zip(allowed_roots, canonical_roots)
+            )
+            is_inside_root_intent = has_dataset_root or (default_root is not None)
+        elif len(norm_parts) == 1:
+            is_inside_root_intent = True
+
+    if is_inside_root_intent:
+        raise FileNotFoundError(f"File not found or not a regular file: '{cleaned}'")
 
     raise ValueError("Access denied: path is outside approved directories")
 
