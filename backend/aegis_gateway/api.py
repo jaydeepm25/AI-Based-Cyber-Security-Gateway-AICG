@@ -103,44 +103,88 @@ def resolve_contained_path(
     candidate_path: str | Path | None,
     allowed_roots: list[Path] | tuple[Path, ...],
     default_root: Path | None = None,
+    allowed_extensions: tuple[str, ...] | set[str] | list[str] | None = None,
 ) -> Path:
     """Resolve a candidate path and verify it is strictly contained within at least one allowed root.
 
     Resolves symlinks, relative traversal components (..), and enforces boundary containment.
-    Raises ValueError if path traverses outside approved directories.
+    Validates file extension against allowed_extensions if specified.
+    Raises ValueError if path traverses outside approved directories or has an unsupported extension.
     Raises FileNotFoundError if the target file does not exist or is not a regular file.
     """
-    if not candidate_path:
+    if candidate_path is None or not isinstance(candidate_path, (str, Path)):
+        raise ValueError("Path must be a valid string")
+
+    raw_str = str(candidate_path)
+    if "\0" in raw_str:
+        raise ValueError("Path contains invalid null byte")
+
+    cleaned = raw_str.strip()
+    if not cleaned:
         raise ValueError("Path must not be empty")
 
-    p = Path(candidate_path)
-    if not p.is_absolute():
-        base = default_root or allowed_roots[0]
-        chosen = base / p
-        resolved_roots = [r.resolve() for r in allowed_roots]
-        for root in [base] + [r for r in allowed_roots if r != base]:
-            test_path = (root / p).resolve()
-            test_is_contained = any(
-                test_path == r_root or r_root in test_path.parents
-                for r_root in resolved_roots
-            )
-            if test_is_contained and test_path.is_file():
-                chosen = root / p
-                break
-        p = chosen
+    p = Path(cleaned)
 
-    resolved = p.resolve()
+    if not allowed_roots:
+        raise ValueError("No approved directories specified")
     resolved_roots = [r.resolve() for r in allowed_roots]
 
+    if not p.is_absolute():
+        base = default_root or allowed_roots[0]
+        candidate_bases: list[Path] = [base]
+        for r in allowed_roots:
+            if r not in candidate_bases:
+                candidate_bases.append(r)
+
+        from .config import BACKEND_ROOT, PROJECT_ROOT
+        if p.parts and p.parts[0] == "dataset":
+            candidate_bases.insert(0, PROJECT_ROOT)
+        else:
+            for extra in (PROJECT_ROOT, BACKEND_ROOT):
+                if extra not in candidate_bases:
+                    candidate_bases.append(extra)
+
+        chosen = base / p
+        for candidate_base in candidate_bases:
+            try:
+                test_path = (candidate_base / p).resolve()
+                if test_path.is_file() and any(
+                    test_path == r_root or test_path.is_relative_to(r_root)
+                    for r_root in resolved_roots
+                ):
+                    chosen = candidate_base / p
+                    break
+                elif (candidate_base / p).exists():
+                    chosen = candidate_base / p
+                    break
+            except (ValueError, OSError):
+                continue
+        p = chosen
+
+    try:
+        resolved = p.resolve()
+    except (ValueError, OSError) as err:
+        raise ValueError(f"Invalid path '{candidate_path}': {err}") from err
+
     is_contained = any(
-        resolved == root or root in resolved.parents
-        for root in resolved_roots
+        resolved == r_root or resolved.is_relative_to(r_root)
+        for r_root in resolved_roots
     )
     if not is_contained:
         raise ValueError(f"Access denied: path '{candidate_path}' is outside approved directories")
 
     if not resolved.is_file():
         raise FileNotFoundError(f"File not found or not a regular file: '{candidate_path}'")
+
+    if allowed_extensions is not None:
+        normalized_exts = {
+            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
+            for ext in allowed_extensions
+        }
+        if resolved.suffix.lower() not in normalized_exts:
+            raise ValueError(
+                f"Unsupported file extension '{resolved.suffix}'. Approved extensions: {', '.join(sorted(normalized_exts))}"
+            )
 
     return resolved
 
@@ -1506,15 +1550,13 @@ def create_app(runtime: GatewayRuntime) -> Flask:
         root = runtime.settings.project_root / "ns-allinone-3.48" / "ns-3.48"
         scratch_dir = root / "scratch"
         existing = [str(path.relative_to(runtime.settings.project_root)) for path in scratch_dir.glob("*.cc")] if scratch_dir.exists() else []
-        dataset_dir = runtime.settings.root / "dataset"
-        if not dataset_dir.exists():
-            dataset_dir = runtime.settings.project_root / "dataset"
+        trace_dir = runtime.settings.trace_dir
         return jsonify({
             "available": root.exists(),
             "provenance": "SIMULATED",
             "adapter": "POST /api/ns3/import accepts repository-local CSV paths",
             "existing_scenarios": existing,
-            "pcap_traces": [f"dataset/{p.name}" for p in sorted(dataset_dir.glob("ns3_*.pcap"))] if dataset_dir.exists() else []
+            "pcap_traces": [f"dataset/{p.name}" for p in sorted(trace_dir.glob("ns3_*.pcap"))] if trace_dir.exists() else []
         })
 
     @app.post("/api/ns3/import")
@@ -1522,16 +1564,25 @@ def create_app(runtime: GatewayRuntime) -> Flask:
     @roles_required(ROLE_ADMIN)
     def import_ns3():
         curr_user = get_current_user() or {"username": "admin", "role": "ADMIN"}
-        body = request.get_json(silent=True) or {}
-        raw_path = body.get("path", "")
+        payload = request.get_json(silent=True)
+        if payload is None:
+            body = {}
+        elif not isinstance(payload, dict):
+            return jsonify({"error": "request body must be a JSON object"}), 400
+        else:
+            body = payload
+        raw_path = body.get("path")
+        if raw_path is None or not isinstance(raw_path, str):
+            return jsonify({"error": "path must be a string naming a trace CSV"}), 400
         try:
             candidate = resolve_contained_path(
                 raw_path,
-                allowed_roots=[runtime.settings.root, runtime.settings.project_root],
-                default_root=runtime.settings.root,
+                allowed_roots=[runtime.settings.trace_dir],
+                default_root=runtime.settings.trace_dir,
+                allowed_extensions=(".csv",),
             )
-        except (ValueError, FileNotFoundError):
-            return jsonify({"error": "path must name a repository-local CSV"}), 400
+        except (ValueError, FileNotFoundError) as error:
+            return jsonify({"error": str(error)}), 400
         try:
             count = sum(1 for event in ns3_csv_events(candidate, body.get("scenario_id")) for _ in [runtime.ingest(event)])
             rel_source = _safe_relative_path(candidate, runtime.settings)
@@ -1582,13 +1633,24 @@ def create_app(runtime: GatewayRuntime) -> Flask:
     @roles_required(ROLE_ADMIN)
     def import_cooja():
         curr_user = get_current_user() or {"username": "admin", "role": "ADMIN"}
-        body = request.get_json(silent=True) or {}
-        raw_path = body.get("path") or str(runtime.settings.cooja_dir / "cooja_ml_ready_v1.csv")
+        payload = request.get_json(silent=True)
+        if payload is None:
+            body = {}
+        elif not isinstance(payload, dict):
+            return jsonify({"error": "request body must be a JSON object"}), 400
+        else:
+            body = payload
+        raw_path = body.get("path")
+        if raw_path is None:
+            raw_path = str(runtime.settings.cooja_dir / "cooja_ml_ready_v1.csv")
+        elif not isinstance(raw_path, str):
+            return jsonify({"error": "path must be a string naming a Cooja CSV"}), 400
         try:
             candidate = resolve_contained_path(
                 raw_path,
-                allowed_roots=[runtime.settings.root, runtime.settings.project_root, runtime.settings.cooja_dir],
+                allowed_roots=[runtime.settings.trace_dir, runtime.settings.cooja_dir],
                 default_root=runtime.settings.cooja_dir,
+                allowed_extensions=(".csv",),
             )
         except (ValueError, FileNotFoundError) as error:
             return jsonify({"error": str(error)}), 400
@@ -1618,16 +1680,25 @@ def create_app(runtime: GatewayRuntime) -> Flask:
     @roles_required(ROLE_ADMIN)
     def replay_pcap():
         curr_user = get_current_user() or {"username": "admin", "role": "ADMIN"}
-        body = request.get_json(silent=True) or {}
-        raw_path = body.get("path", "")
+        payload = request.get_json(silent=True)
+        if payload is None:
+            body = {}
+        elif not isinstance(payload, dict):
+            return jsonify({"error": "request body must be a JSON object"}), 400
+        else:
+            body = payload
+        raw_path = body.get("path")
+        if raw_path is None or not isinstance(raw_path, str):
+            return jsonify({"error": "path must be a string naming a PCAP file"}), 400
         try:
             candidate = resolve_contained_path(
                 raw_path,
-                allowed_roots=[runtime.settings.root, runtime.settings.project_root],
-                default_root=runtime.settings.root,
+                allowed_roots=[runtime.settings.trace_dir],
+                default_root=runtime.settings.trace_dir,
+                allowed_extensions=(".pcap", ".pcapng"),
             )
-        except (ValueError, FileNotFoundError):
-            return jsonify({"error": "path must name a repository-local PCAP file"}), 400
+        except (ValueError, FileNotFoundError) as error:
+            return jsonify({"error": str(error)}), 400
         try:
             windowed = body.get("windowed", True)
             stream = pcap_window_events(candidate) if windowed else pcap_events(candidate)

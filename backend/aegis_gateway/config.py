@@ -47,6 +47,7 @@ class Settings:
     model_path: Path = field(default_factory=_model_path_from_env)
     report_dir: Path = BACKEND_ROOT / "reports"
     dataset_dir: Path = BACKEND_ROOT / "data" / "datasets"
+    trace_dir: Path = BACKEND_ROOT / "dataset"
     cooja_dir: Path = field(
         default_factory=lambda: Path(
             os.getenv("AEGIS_COOJA_DIR")
@@ -119,6 +120,7 @@ class Settings:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.report_dir.mkdir(parents=True, exist_ok=True)
         self.dataset_dir.mkdir(parents=True, exist_ok=True)
+        self.trace_dir.mkdir(parents=True, exist_ok=True)
         try:
             self.model_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError:
