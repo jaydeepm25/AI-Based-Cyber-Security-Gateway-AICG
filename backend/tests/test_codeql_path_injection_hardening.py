@@ -475,3 +475,138 @@ def test_ns3_status_uses_trace_dir(hardened_app):
         assert "pcap_traces" in data
         assert len(data["pcap_traces"]) > 0
         assert all(t.startswith("dataset/ns3_") and t.endswith(".pcap") for t in data["pcap_traces"])
+
+
+# =============================================================================
+# 9. INFORMATION EXPOSURE: ERROR RESPONSES DO NOT EXPOSE FILESYSTEM PATHS
+# =============================================================================
+
+@pytest.mark.parametrize("endpoint", [
+    "/api/ns3/import",
+    "/api/cooja/import",
+    "/api/pcap/replay",
+])
+@pytest.mark.parametrize("bad_path", [
+    "/etc/passwd",
+    "/etc/shadow",
+    "/var/log/syslog",
+    "/home/kali/secret.csv",
+    "../../../../etc/passwd",
+    "dataset/../../../../etc/passwd",
+    "nonexistent_relative_trace.csv",
+    "dataset/nonexistent_relative_trace.csv",
+])
+def test_error_responses_do_not_expose_filesystem_paths(hardened_app, endpoint, bad_path):
+    """Error responses never leak absolute system paths, exception strings, or directory structures."""
+    _, app = hardened_app
+    with app.test_client() as client:
+        _login_as(client, "admin", ROLE_ADMIN)
+
+        res = client.post(endpoint, json={"path": bad_path})
+        assert res.status_code == 400
+        error_msg = res.get_json()["error"]
+
+        # 1. Error message must not contain raw requested system path
+        assert "/etc" not in error_msg
+        assert "/home" not in error_msg
+        assert "/var" not in error_msg
+        assert "/tmp" not in error_msg
+        assert ".." not in error_msg
+
+        # 2. Must not contain Python exception class or traceback markers
+        assert "Traceback" not in error_msg
+        assert "FileNotFoundError" not in error_msg
+        assert "ValueError" not in error_msg
+        assert "Errno" not in error_msg
+
+
+# =============================================================================
+# 10. NO PROBING OUTSIDE APPROVED ROOTS BEFORE VALIDATION
+# =============================================================================
+
+def test_no_filesystem_probing_outside_approved_roots(hardened_app, monkeypatch):
+    """resolve_contained_path does not invoke stat(), exists(), or is_file() on candidates outside roots."""
+    _, app = hardened_app
+    checked_paths: list[str] = []
+
+    orig_is_file = Path.is_file
+    def tracking_is_file(self):
+        checked_paths.append(str(self))
+        return orig_is_file(self)
+
+    monkeypatch.setattr(Path, "is_file", tracking_is_file)
+
+    with app.test_client() as client:
+        _login_as(client, "admin", ROLE_ADMIN)
+
+        res = client.post("/api/ns3/import", json={"path": "../../../../etc/passwd"})
+        assert res.status_code == 400
+
+        # Verify that /etc/passwd or any outside path was never probed with is_file()
+        assert not any("/etc/passwd" in p for p in checked_paths)
+
+
+# =============================================================================
+# 11. BARE FILENAME AND RELATIVE IMPORT TESTS
+# =============================================================================
+
+def test_bare_filename_imports(hardened_app):
+    """Endpoints accept bare filenames residing directly in the default approved root."""
+    runtime, app = hardened_app
+    with app.test_client() as client:
+        _login_as(client, "admin", ROLE_ADMIN)
+
+        # NS-3 bare filename in trace_dir
+        res_ns3 = client.post(
+            "/api/ns3/import",
+            json={"path": "ns3_low_v1_features.csv", "scenario_id": "test_bare"}
+        )
+        assert res_ns3.status_code == 200
+        assert res_ns3.get_json()["imported"] > 0
+
+        # Cooja bare filename in cooja_dir
+        cooja_bare = runtime.settings.cooja_dir / "cooja_bare.csv"
+        cooja_bare.write_text(
+            "node_id,packets_in_window,packet_rate_mean,radio_activity_ratio_mean,label\n"
+            "1,10,10.0,0.05,NORMAL\n"
+        )
+        res_cooja = client.post(
+            "/api/cooja/import",
+            json={"path": "cooja_bare.csv"}
+        )
+        assert res_cooja.status_code == 200
+        assert res_cooja.get_json()["imported"] == 1
+
+        # PCAP bare filename in trace_dir
+        res_pcap = client.post(
+            "/api/pcap/replay",
+            json={"path": "ns3_normal_sensor_1-0-0.pcap", "windowed": True}
+        )
+        assert res_pcap.status_code == 200
+        assert res_pcap.get_json()["replayed"] > 0
+
+
+# =============================================================================
+# 12. REJECTION OF NESTED RELATIVE PATHS
+# =============================================================================
+
+@pytest.mark.parametrize("endpoint", [
+    "/api/ns3/import",
+    "/api/cooja/import",
+    "/api/pcap/replay",
+])
+@pytest.mark.parametrize("nested_path", [
+    "sub/nested/trace.csv",
+    "deep/dir/structure/file.pcap",
+    "dataset/sub/trace.csv",
+    "other_dataset/trace.csv",
+])
+def test_nested_relative_paths_rejected(hardened_app, endpoint, nested_path):
+    """Nested relative paths outside the dataset/<filename> pattern are rejected."""
+    _, app = hardened_app
+    with app.test_client() as client:
+        _login_as(client, "admin", ROLE_ADMIN)
+
+        res = client.post(endpoint, json={"path": nested_path})
+        assert res.status_code == 400
+        assert "outside approved directories" in res.get_json()["error"]

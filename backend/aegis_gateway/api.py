@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from datetime import timedelta
 import json
+import logging
+import os
 from pathlib import Path
 from typing import Any
 
 from urllib.parse import unquote, urlsplit
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, session
+from werkzeug.utils import secure_filename
 
 from .adapters import cooja_csv_events, ns3_csv_events, pcap_events, pcap_window_events
 from .config import Settings
@@ -99,6 +102,27 @@ def sanitize_redirect_url(target: str | None, default: str = "/") -> str:
         return default
 
 
+logger = logging.getLogger(__name__)
+
+
+def _trace_error_response(prefix: str, error: Exception) -> tuple[Response, int]:
+    """Map path validation errors to generic, non-leaking HTTP 400 responses."""
+    err_str = str(error)
+    if "outside approved directories" in err_str:
+        detail = "outside approved directories"
+    elif "unsupported file extension" in err_str.lower():
+        detail = "Unsupported file extension"
+    elif "must not be empty" in err_str or "empty" in err_str:
+        detail = "must not be empty"
+    elif "null byte" in err_str:
+        detail = "contains invalid null byte"
+    elif "regular file" in err_str or "not found" in err_str.lower():
+        detail = "not a regular file"
+    else:
+        detail = "Invalid path"
+    return jsonify({"error": f"{prefix}: {detail}"}), 400
+
+
 def resolve_contained_path(
     candidate_path: str | Path | None,
     allowed_roots: list[Path] | tuple[Path, ...],
@@ -123,70 +147,88 @@ def resolve_contained_path(
     if not cleaned:
         raise ValueError("Path must not be empty")
 
-    p = Path(cleaned)
-
     if not allowed_roots:
         raise ValueError("No approved directories specified")
-    resolved_roots = [r.resolve() for r in allowed_roots]
 
-    if not p.is_absolute():
-        base = default_root or allowed_roots[0]
-        candidate_bases: list[Path] = [base]
-        for r in allowed_roots:
-            if r not in candidate_bases:
-                candidate_bases.append(r)
+    canonical_roots = [os.path.realpath(str(r)) for r in allowed_roots]
 
-        from .config import BACKEND_ROOT, PROJECT_ROOT
-        if p.parts and p.parts[0] == "dataset":
-            candidate_bases.insert(0, PROJECT_ROOT)
+    # Rejection of traversal components before any resolution
+    raw_segments = cleaned.replace("\\", "/").split("/")
+    if any(seg == ".." for seg in raw_segments):
+        raise ValueError("Access denied: path is outside approved directories")
+
+    is_abs = os.path.isabs(cleaned)
+    if is_abs:
+        candidate_abs = cleaned
+    else:
+        norm_parts = [p for p in raw_segments if p and p != "."]
+        if not norm_parts:
+            raise ValueError("Path must not be empty")
+
+        if len(norm_parts) == 2 and norm_parts[0] == "dataset":
+            filename = norm_parts[1]
+            if secure_filename(filename) != filename:
+                raise ValueError("Access denied: path is outside approved directories")
+
+            dataset_root = next(
+                (r for r in canonical_roots if os.path.basename(r) == "dataset"),
+                None,
+            )
+            if dataset_root is None and default_root:
+                d_real = os.path.realpath(str(default_root))
+                if d_real in canonical_roots:
+                    dataset_root = d_real
+            if dataset_root is None:
+                raise ValueError("Access denied: path is outside approved directories")
+            candidate_abs = os.path.join(dataset_root, filename)
+
+        elif len(norm_parts) == 1:
+            if "/" in cleaned or "\\" in cleaned:
+                raise ValueError("Invalid path: path separators not permitted in filename")
+            filename = norm_parts[0]
+            if secure_filename(filename) != filename:
+                raise ValueError("Access denied: path is outside approved directories")
+
+            base_root = os.path.realpath(str(default_root)) if default_root else canonical_roots[0]
+            candidate_abs = os.path.join(base_root, filename)
+
         else:
-            for extra in (PROJECT_ROOT, BACKEND_ROOT):
-                if extra not in candidate_bases:
-                    candidate_bases.append(extra)
+            # Nested relative path outside approved conventions
+            raise ValueError("Access denied: path is outside approved directories")
 
-        chosen = base / p
-        for candidate_base in candidate_bases:
+    # Canonicalize and resolve symlinks without checking file existence yet
+    canonical_candidate = os.path.realpath(candidate_abs)
+
+    # Component-safe containment check against canonical roots
+    is_contained = False
+    for r in canonical_roots:
+        root_with_sep = r if r.endswith(os.sep) else r + os.sep
+        if canonical_candidate == r or canonical_candidate.startswith(root_with_sep):
             try:
-                test_path = (candidate_base / p).resolve()
-                if test_path.is_file() and any(
-                    test_path == r_root or test_path.is_relative_to(r_root)
-                    for r_root in resolved_roots
-                ):
-                    chosen = candidate_base / p
+                if os.path.commonpath([canonical_candidate, r]) == r:
+                    is_contained = True
                     break
-                elif (candidate_base / p).exists():
-                    chosen = candidate_base / p
-                    break
-            except (ValueError, OSError):
-                continue
-        p = chosen
+            except ValueError:
+                pass
 
-    try:
-        resolved = p.resolve()
-    except (ValueError, OSError) as err:
-        raise ValueError(f"Invalid path '{candidate_path}': {err}") from err
-
-    is_contained = any(
-        resolved == r_root or resolved.is_relative_to(r_root)
-        for r_root in resolved_roots
-    )
     if not is_contained:
-        raise ValueError(f"Access denied: path '{candidate_path}' is outside approved directories")
+        raise ValueError("Access denied: path is outside approved directories")
 
-    if not resolved.is_file():
-        raise FileNotFoundError(f"File not found or not a regular file: '{candidate_path}'")
+    target_path = Path(canonical_candidate)
+    if not target_path.is_file():
+        raise FileNotFoundError("File not found or not a regular file")
 
     if allowed_extensions is not None:
         normalized_exts = {
             ext.lower() if ext.startswith(".") else f".{ext.lower()}"
             for ext in allowed_extensions
         }
-        if resolved.suffix.lower() not in normalized_exts:
+        if target_path.suffix.lower() not in normalized_exts:
             raise ValueError(
-                f"Unsupported file extension '{resolved.suffix}'. Approved extensions: {', '.join(sorted(normalized_exts))}"
+                f"Unsupported file extension '{target_path.suffix}'. Approved extensions: {', '.join(sorted(normalized_exts))}"
             )
 
-    return resolved
+    return target_path
 
 
 def _safe_relative_path(path: Path, settings: Settings, prefer_repo: bool = False) -> str:
@@ -1582,7 +1624,8 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                 allowed_extensions=(".csv",),
             )
         except (ValueError, FileNotFoundError) as error:
-            return jsonify({"error": str(error)}), 400
+            logger.warning("NS-3 trace path validation failed: %s", error)
+            return _trace_error_response("Invalid or unsupported NS-3 trace file", error)
         try:
             count = sum(1 for event in ns3_csv_events(candidate, body.get("scenario_id")) for _ in [runtime.ingest(event)])
             rel_source = _safe_relative_path(candidate, runtime.settings)
@@ -1602,7 +1645,8 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                 "provenance": "SIMULATED"
             })
         except Exception as error:
-            return jsonify({"error": str(error)}), 400
+            logger.error("NS-3 trace processing failed: %s", error, exc_info=True)
+            return jsonify({"error": "Invalid or unsupported NS-3 trace file"}), 400
 
     @app.get("/api/cooja")
     @login_required
@@ -1653,7 +1697,8 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                 allowed_extensions=(".csv",),
             )
         except (ValueError, FileNotFoundError) as error:
-            return jsonify({"error": str(error)}), 400
+            logger.warning("Cooja trace path validation failed: %s", error)
+            return _trace_error_response("Invalid or unsupported Cooja trace file", error)
         try:
             count = sum(1 for event in cooja_csv_events(candidate, body.get("scenario_id")) for _ in [runtime.ingest(event)])
             runtime.store.record_audit(
@@ -1673,7 +1718,8 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                 "source_type": "COOJA"
             })
         except Exception as error:
-            return jsonify({"error": str(error)}), 400
+            logger.error("Cooja trace processing failed: %s", error, exc_info=True)
+            return jsonify({"error": "Invalid or unsupported Cooja trace file"}), 400
 
     @app.post("/api/pcap/replay")
     @login_required
@@ -1698,7 +1744,8 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                 allowed_extensions=(".pcap", ".pcapng"),
             )
         except (ValueError, FileNotFoundError) as error:
-            return jsonify({"error": str(error)}), 400
+            logger.warning("PCAP trace path validation failed: %s", error)
+            return _trace_error_response("Invalid or unsupported PCAP trace file", error)
         try:
             windowed = body.get("windowed", True)
             stream = pcap_window_events(candidate) if windowed else pcap_events(candidate)
@@ -1721,7 +1768,8 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                 "transmitted": False
             })
         except Exception as error:
-            return jsonify({"error": str(error)}), 400
+            logger.error("PCAP trace replay failed: %s", error, exc_info=True)
+            return jsonify({"error": "Invalid or unsupported PCAP trace file"}), 400
 
     @app.get("/events")
     @login_required
