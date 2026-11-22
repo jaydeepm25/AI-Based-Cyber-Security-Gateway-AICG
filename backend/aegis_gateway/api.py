@@ -199,36 +199,33 @@ def resolve_contained_path(
     # Canonicalize and resolve symlinks without checking file existence yet
     canonical_candidate = os.path.realpath(candidate_abs)
 
-    # Component-safe containment check against canonical roots
-    is_contained = False
-    for r in canonical_roots:
-        root_with_sep = r if r.endswith(os.sep) else r + os.sep
-        if canonical_candidate == r or canonical_candidate.startswith(root_with_sep):
+    # Direct, immediate containment guard for each canonical approved root
+    for root in canonical_roots:
+        root_with_sep = root if root.endswith(os.sep) else root + os.sep
+        if canonical_candidate == root or canonical_candidate.startswith(root_with_sep):
             try:
-                if os.path.commonpath([canonical_candidate, r]) == r:
-                    is_contained = True
-                    break
+                if os.path.commonpath([canonical_candidate, root]) != root:
+                    continue
             except ValueError:
-                pass
+                continue
 
-    if not is_contained:
-        raise ValueError("Access denied: path is outside approved directories")
+            target_path = Path(canonical_candidate)
+            if not target_path.is_file():
+                raise FileNotFoundError("File not found or not a regular file")
 
-    target_path = Path(canonical_candidate)
-    if not target_path.is_file():
-        raise FileNotFoundError("File not found or not a regular file")
+            if allowed_extensions is not None:
+                normalized_exts = {
+                    ext.lower() if ext.startswith(".") else f".{ext.lower()}"
+                    for ext in allowed_extensions
+                }
+                if target_path.suffix.lower() not in normalized_exts:
+                    raise ValueError(
+                        f"Unsupported file extension '{target_path.suffix}'. Approved extensions: {', '.join(sorted(normalized_exts))}"
+                    )
 
-    if allowed_extensions is not None:
-        normalized_exts = {
-            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
-            for ext in allowed_extensions
-        }
-        if target_path.suffix.lower() not in normalized_exts:
-            raise ValueError(
-                f"Unsupported file extension '{target_path.suffix}'. Approved extensions: {', '.join(sorted(normalized_exts))}"
-            )
+            return target_path
 
-    return target_path
+    raise ValueError("Access denied: path is outside approved directories")
 
 
 def _safe_relative_path(path: Path, settings: Settings, prefer_repo: bool = False) -> str:

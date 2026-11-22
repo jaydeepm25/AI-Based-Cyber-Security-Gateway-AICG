@@ -610,3 +610,34 @@ def test_nested_relative_paths_rejected(hardened_app, endpoint, nested_path):
         res = client.post(endpoint, json={"path": nested_path})
         assert res.status_code == 400
         assert "outside approved directories" in res.get_json()["error"]
+
+
+# =============================================================================
+# 13. PREFIX-COLLISION PATH REJECTION TESTS
+# =============================================================================
+
+@pytest.mark.parametrize("endpoint", [
+    "/api/ns3/import",
+    "/api/cooja/import",
+    "/api/pcap/replay",
+])
+def test_prefix_collision_paths_rejected(hardened_app, tmp_path: Path, endpoint):
+    """Paths matching approved root prefix without directory separator are rejected."""
+    runtime, app = hardened_app
+    collision_dir = runtime.settings.trace_dir.parent / f"{runtime.settings.trace_dir.name}_collision"
+    collision_dir.mkdir(parents=True, exist_ok=True)
+    collision_file = collision_dir / "collision_trace.csv"
+    collision_file.write_text("dummy,content\n1,2\n")
+
+    try:
+        with app.test_client() as client:
+            _login_as(client, "admin", ROLE_ADMIN)
+
+            res = client.post(endpoint, json={"path": str(collision_file)})
+            assert res.status_code == 400
+            assert "outside approved directories" in res.get_json()["error"]
+    finally:
+        if collision_file.exists():
+            collision_file.unlink()
+        if collision_dir.exists():
+            collision_dir.rmdir()
