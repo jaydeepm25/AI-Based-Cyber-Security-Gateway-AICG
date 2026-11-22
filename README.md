@@ -143,7 +143,7 @@ flowchart TD
     D2 -->|Yes| D5
     DR --> D7
     D3 & D5 --> D7
-    D2 -->|No (Fallback)| D6
+    D2 -->|Fallback| D6
     DR --> D6
     D7 --> Governance
     D6 --> Governance
