@@ -1,470 +1,529 @@
 # AI-Based Cyber Security Gateway for Industry 4.0 (AICG)
 
-[![Python](https://img.shields.io/badge/Python-3.14-blue.svg)](https://www.python.org/)
-[![Flask](https://img.shields.io/badge/Framework-Flask_3.1-green.svg)](https://flask.palletsprojects.com/)
-[![scikit-learn](https://img.shields.io/badge/ML-scikit--learn_1.9-orange.svg)](https://scikit-learn.org/)
-[![Test Suite](https://img.shields.io/badge/Tests-261_Passed-brightgreen.svg)]()
-[![Safety Boundary](https://img.shields.io/badge/Boundary-100%25_Dry--Run_/_Contained-red.svg)]()
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.14.8-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Framework](https://img.shields.io/badge/Framework-Flask_3.1.3-000000.svg?logo=flask&logoColor=white)](https://flask.palletsprojects.com/)
+[![ML](https://img.shields.io/badge/ML-scikit--learn_1.9.0-F7931E.svg?logo=scikitlearn&logoColor=white)](https://scikit-learn.org/)
+[![Packet Engine](https://img.shields.io/badge/Packet_Engine-dpkt_1.9.8-6B46C1.svg)](https://github.com/kbandla/dpkt)
+[![Local Test Run](https://img.shields.io/badge/Local_Verification-261_Passed_%2874.07s%29-22C55E.svg)]()
+[![Containment](https://img.shields.io/badge/Containment-DRY__RUN_Mode-EF4444.svg)]()
+[![License](https://img.shields.io/badge/License-Multi--Tier_%28MIT_%2F_GPLv2%29-2563EB.svg)](LICENSE)
 
-An authoritative, end-to-end edge cybersecurity gateway engineered for Industrial IoT (IIoT) and Industry 4.0 operational technology (OT) networks. The platform unites multi-source telemetry ingestion, physics-informed cause-based energy correlation, Platt-calibrated hybrid AI/ML attack detection, dynamic Zero-Trust Identity and Access Management (IAM), multi-window campaign correlation, and closed-loop incident lifecycle state governance within an industrial Matte Graphite operations console.
-
----
-
-## 1. Project Overview
-
-**AI-Edge-DDoS-Gateway** (codenamed **Aegis Gateway**) is a specialized edge security gateway designed to protect resource-constrained field networks (6LoWPAN, Modbus/TCP, Ethernet/IP, and MQTT) against distributed denial-of-service (DDoS) disruptions, telemetry poisoning, and energy exhaustion attacks. 
-
-Operating at the physical boundary between edge motes and enterprise SCADA/MES layers, the gateway inspects ingress packet streams, correlates network velocity with edge power dissipation models, identifies anomalous and coordinated attack vectors via calibrated machine learning, and executes autonomous, non-disruptive rate-limiting and quarantine policies under strict containment guarantees.
+An edge cybersecurity gateway research prototype engineered for Industrial IoT (IIoT) and Industry 4.0 operational technology (OT) networks. The platform unites multi-source telemetry ingestion, deterministic physics-informed energy and resource modeling, hybrid machine learning anomaly detection, dynamic Zero-Trust Identity and Access Management (IAM), multi-window campaign correlation, and closed-loop incident lifecycle governance within an industrial Matte Graphite operations console.
 
 ---
 
-## 2. Problem Statement
+## 2. Dashboard Preview
+
+![AICG Industrial Security Operations Console](backend/reports/evidence/screenshots/02_admin_dashboard_landing.png)
+*Figure 1: AICG Industrial Security Operations Console — Real-time telemetry monitoring, Zero-Trust device trust tracking, and containment controls.*
+
+---
+
+## 3. Project Overview
+
+**AI-Based Cyber Security Gateway for Industry 4.0 (AICG)** (internally designated **Aegis Gateway**) is an edge cybersecurity research prototype and demonstrator engineered to evaluate defense mechanisms for resource-constrained field networks (such as 6LoWPAN, Modbus/TCP, and MQTT) against DDoS-style traffic anomalies and modeled network/resource exhaustion behaviors.
+
+The demonstrator processes normalized telemetry events, in-process simulated scenario windows, and offline PCAP/NS-3/Cooja traces within a software evaluation pipeline. It does **not** passively sniff physical network interfaces or operate as an inline bump-in-the-wire hardware gateway between physical OT devices and SCADA/MES systems. Instead, it evaluates a logical/simulated plant architecture: correlating telemetry event velocity with modeled edge energy dissipation, identifying anomalous attack vectors through hybrid machine learning and heuristic rules, and demonstrating closed-loop mitigation within strict in-process software containment (`DRY_RUN`).
+
+---
+
+## 4. Problem Statement
 
 Modern Industry 4.0 deployments exhibit critical cybersecurity vulnerabilities at the OT edge:
 
 1. **Severe Resource Asymmetry**: Edge field devices (sensors, actuators, RTUs) operate under strict energy and memory budgets (e.g., MSP430, ARM Cortex-M), rendering cryptographic handshakes and heavy endpoint security agents impractical.
 2. **Stealthy Volumetric & Pulsing DDoS**: Attackers leverage compromised IoT nodes to conduct low-rate pulsing and multi-vector UDP/ICMP floods that degrade deterministic control loops without exceeding static firewall volume thresholds.
 3. **Energy Depletion ("Sleep Deprivation") Attacks**: Malicious packet storms force battery-powered edge motes to remain in high-power radio listen/transmit states, exhausting multi-year battery reserves in hours.
-4. **False Positive Operational Risk**: In industrial automation, erroneously blocking legitimate telemetry from safety-critical sensors can cause unscheduled plant shutdowns costing thousands of dollars per minute.
-5. **Aesthetic and Functional Console Clutter**: Traditional security dashboards overwhelm OT operators with noisy alerts, ungrounded synthetic readings, and confusing navigation during security incidents.
+4. **False Positive Operational Risk**: In industrial automation, erroneously blocking legitimate telemetry from safety-critical sensors can interrupt critical processes and trigger unscheduled plant shutdowns.
 
 ---
 
-## 3. Proposed Solution
+## 5. Proposed Solution
 
-The **Aegis Gateway** addresses edge cyber threats through five defense-in-depth architectural layers:
+The **Aegis Gateway** evaluates defense-in-depth edge protection across a logical/simulated industrial network architecture:
 
 ```
 +-------------------------------------------------------------------------------+
-|                        Industrial Plant Network Mimic                         |
-|   [6LoWPAN Motes] ----> [Edge Gateway: Aegis Core] ----> [SCADA / MES Core]  |
+|             Logical / Simulated Industrial Plant Architecture                 |
+|   [Modeled 6LoWPAN Motes] --> [Aegis Gateway Core] --> [Logical SCADA/MES]    |
+|   (Offline PCAPs / In-Memory Windows / NS-3 Discrete-Event Traces)           |
 +-------------------------------------------------------------------------------+
-                                      |
-       +------------------------------+------------------------------+
-       |                              |                              |
-       v                              v                              v
-[Physics Energy Model]    [Platt-Calibrated Hybrid ML]    [Zero-Trust IAM & RBAC]
-Cause-based mW dissipation   Calibrated RF + iForest        Trust score (0..100)
-correlation without hardware   Stratified Group Evaluation    Autonomous policy demotion
-       |                              |                              |
-       +------------------------------+------------------------------+
-                                      |
-                                      v
-                        [Campaign Lifecycle Correlator]
-                        Sequential Multi-Stage Stepper
-                        (NORMAL -> DETECTED -> MITIGATED)
-                                      |
-                                      v
-                        [Industrial Graphite SOC HMI]
-                        Air-gapped, tabular numerals,
-                        sub-second SSE live telemetry
+                                       |
+        +------------------------------+------------------------------+
+        |                              |                              |
+        v                              v                              v
+[Modeled Energy Estimator] [Hybrid ML & Rule Engine]     [Zero-Trust IAM & RBAC]
+Deterministic mW modeling   RF (Calibrated if flagged)    Trust score (0..100)
+(Not a hardware meter)      + iForest / Rule Fallback     Access denied below trust threshold (40)
+        |                              |                              |
+        +------------------------------+------------------------------+
+                                       |
+                                       v
+                         [Campaign Lifecycle Correlator]
+                         Sequential Multi-Stage Stepper
+                         (NORMAL -> DETECTED -> MITIGATED)
+                                       |
+                                       v
+                         [Industrial Graphite Operations HMI]
+                         Locally hosted, tabular numerals,
+                         Server-Sent Events UI updates
 ```
 
 ---
 
-## 4. Key Features
+## 6. Key Features
 
-- **Multi-Source Ingestion Pipeline**: Ingests live network packets, NS-3 discrete-event network traces, Contiki-NG / Cooja 6LoWPAN mote logs, and standard PCAP packet replays through a unified canonical schema (`CANONICAL_FIELDS`).
-- **Physics-Informed Energy & Resource Correlation**: Models device power consumption (mW, mJ), CPU load, memory pressure, and radio duty cycles from first principles using deterministic physical equations.
-- **Platt-Calibrated Machine Learning**: Employs a Platt-calibrated Random Forest (`CalibratedClassifierCV` with frozen estimators) coupled with an Isolation Forest for out-of-distribution detection, achieving a Brier calibration loss under $0.0002$.
+- **Multi-Source Ingestion Pipeline**: Ingests normalized telemetry events from multiple ingestion adapters, including offline NS-3 discrete-event traces, Contiki-NG / Cooja mote logs, standard PCAP replays (via dpkt), and in-process scenario generators through a unified canonical schema (`CANONICAL_FIELDS`).
+- **Physics-Informed Energy & Resource Modeling**: Generates deterministic, physics-informed, MODELLED energy and resource estimates (quiescent and active power dissipation in mW, window energy in mJ, and modeled CPU, memory, and radio duty-cycle metrics) derived from observed packet velocity, protocol complexity, and packet-size efficiency. The module functions explicitly as a deterministic mathematical estimator and is **not** a physical hardware power meter.
+- **Hybrid Machine Learning & Heuristic Detection**: Employs rule-based heuristic checks, a Random Forest classifier (reporting Platt-calibrated probabilities when a calibrated bundle is loaded), and an Isolation Forest for out-of-distribution anomaly scoring.
 - **Strict Claim & Provenance Discipline**: All metrics, charts, and audit records explicitly declare their operational provenance (`SIMULATED`, `SYNTHETIC`, `MODELLED`, `REPLAYED`, `DERIVED`), ensuring synthetic metrics are never misrepresented as physical readings.
-- **Dynamic Zero-Trust Identity & Access Management (IAM)**: Tracks dynamic trust scores ($0 \dots 100$) per field device. Benign traffic earns gradual rewards ($+2$/window); verified attack windows invoke calibrated penalties ($-20$/window) triggering autonomous policy demotion.
+- **Dynamic Zero-Trust Identity & Access Management (IAM)**: Evaluates dynamic trust scores ($0 \dots 100$) per device identity based on operational behavior: maintaining the normal baseline yields a delta of 0, suspicious traffic detection applies a delta of -20, observed recovery toward baseline awards a delta of +3, and authentication failure imposes a delta of -15. Access authorization is denied when a device trust score falls below the 40-point policy threshold.
 - **Multi-Window Incident Campaign Correlation**: Correlates successive high-rate attack bursts from the same origin into unified campaign incidents, preventing alert floods and ensuring reproducible incident forensics.
-- **100% Contained Dry-Run Enforcement**: All rate-limiting, egress filtering, and device quarantine policies execute in software containment (`DRY_RUN`), ensuring zero risk to host interfaces or physical firewalls during testing and validation.
-- **Cryptographic Append-Only Audit Historian**: Records every administrative action, login event, policy transition, and alert dismissal in an immutable, cryptographically chained SQLite audit ledger.
-- **Industrial Matte Graphite HMI**: High-contrast, dark-graphite design system optimized for 24/7 OT control rooms, featuring tabular monospace numerals, real-time Canvas streaming charts, embedded SVG line iconography, and zero external CDN dependencies.
+- **Contained Software Mitigation Simulation**: Defaults to `DRY_RUN` mode. When configured for `ACTIVE` or `ENFORCING` operation, mitigations (token-bucket rate limiting, in-process stream drops, and simulated device quarantine) affect events strictly inside the application's in-process telemetry pipeline, with zero installation of host firewall rules (`iptables`, `nftables`, `pf`) or physical network interface manipulation.
+- **Cryptographic Audit Historian**: Records administrative actions, authentication events, policy transitions, and alert dismissals in an append-oriented, cryptographically hash-chained audit ledger with an integrity verification routine.
+- **Industrial Matte Graphite UI**: Locally hosted industrial operations console featuring a dark graphite UI with tabular numerals, real-time Canvas streaming charts updated via Server-Sent Events (SSE), and no external CDN dependencies.
 
 ---
 
-## 5. System Architecture
+## 7. System Architecture
+
+The end-to-end data processing and mitigation lifecycle operates across seven coordinated subsystems:
 
 ```mermaid
 flowchart TD
-    subgraph Ingestion["1. Multi-Source Ingestion Layer"]
-        A1["NS-3 Network Traces (CSVs / Windows)"]
-        A2["PCAP Replay (Packet & Flow Capture)"]
-        A3["Contiki-NG / Cooja (6LoWPAN Motes)"]
-        A4["Synthetic Scenario Catalogue (10 Vectors)"]
+    subgraph Sources["1. Telemetry Ingestion Adapters"]
+        S1["NS-3 Discrete-Event Traces"]
+        S2["Contiki-NG / Cooja Mote Logs"]
+        S3["Offline PCAP Replays (dpkt)"]
+        S4["In-Memory Scenario Windows"]
     end
 
-    subgraph Pipeline["2. Aegis Core Ingestion & Normalization"]
-        B["Schema Normalization (CANONICAL_FIELDS)"]
-        C["Physics-Informed Energy Correlator (MODELLED)"]
+    subgraph Ingestion["2. Data Normalization & Energy Modeling"]
+        I1["Schema Normalization (CANONICAL_FIELDS)"]
+        I2["Physics-Informed Energy Estimator (MODELLED)"]
     end
 
-    subgraph Detection["3. Hybrid AI/ML Detection Engine"]
-        D1["Platt-Calibrated Random Forest (Frozen Estimator)"]
-        D2["Isolation Forest (Out-of-Distribution Anomaly)"]
-        D3["Deterministic Threshold Rules"]
+    subgraph Detection["3. Detection & Inference Engine"]
+        D1["15-Feature Window Vector (detection.py)"]
+        DR["Heuristic Rule Evaluation (Rule Score)"]
+        D2{"Model Bundle Loaded?"}
+        D3["Random Forest Classification"]
+        D4["Calibrated Probability (If bundle calibrated=True)"]
+        D5["IsolationForest Anomaly Scoring (When available)"]
+        D6["Rule-Based Score Alone (min(1.0, S_rule))"]
+        D7["Weighted Score Fusion (0.40 Rule + 0.45 RF + 0.15 iForest)"]
     end
 
-    subgraph Governance["4. Zero-Trust IAM & Governance"]
-        E1["Dynamic Trust Engine (Score: 0..100)"]
-        E2["Multi-Window Campaign Correlator"]
-        E3["Deterministic Incident Lifecycle Stepper"]
-        E4["Contained Policy Response Engine (DRY_RUN)"]
+    subgraph Governance["4. Incident & Trust Management"]
+        G1["Zero-Trust IAM Registry (Trust Score 0-100)"]
+        G2["Multi-Window Campaign State Stepper"]
     end
 
-    subgraph Storage["5. Persistence & Storage Layer"]
-        F1[("SQLite Historian (data/aegis_gateway.sqlite3)")]
-        F2["Immutable Cryptographic Audit Ledger"]
+    subgraph Mitigation["5. Contained Mitigation Simulation"]
+        M1["Simulated Rate Limiting (DRY_RUN)"]
+        M2["Device Quarantine Simulation"]
     end
 
-    subgraph Presentation["6. Operations Console & APIs"]
-        G1["Operator HMI (/) - Live SSE Telemetry & Mimic"]
-        G2["Attack Cockpit (/attacker) - In-Process Injection"]
-        G3["REST APIs (/api/telemetry, /api/admin/*, /api/export/*)"]
+    subgraph Storage["6. SQLite Audit & Historian"]
+        ST1["WAL-Mode Metric Historian"]
+        ST2["Cryptographic Hash-Chained Audit Ledger"]
     end
 
-    Ingestion --> Pipeline
-    Pipeline --> Detection
-    Detection --> Governance
-    Governance --> Storage
-    Storage --> Presentation
+    subgraph HMI["7. Industrial Security Dashboard"]
+        H1["Server-Sent Events Stream"]
+        H2["Dark Graphite Operations Console"]
+    end
+
+    Sources --> Ingestion
+    Ingestion --> D1
+    D1 --> DR
+    D1 --> D2
+    D2 -->|Yes| D3
+    D3 --> D4
+    D2 -->|Yes| D5
+    DR --> D7
+    D3 & D5 --> D7
+    D2 -->|No (Fallback)| D6
+    DR --> D6
+    D7 --> Governance
+    D6 --> Governance
+    Governance --> Mitigation
+    Mitigation --> Storage
+    Storage --> HMI
 ```
 
 ---
 
-## 6. Technical Stack
+## 8. Technology Stack
 
-| Component | Technology | Version | Description |
-|---|---|---|---|
-| **Language** | Python | 3.14.8+ | Primary backend execution environment |
-| **Web Framework** | Flask / Werkzeug | 3.1.3 / 3.1.8 | REST API, SSE streaming, session security |
-| **Machine Learning** | scikit-learn | 1.9.0+ | Random Forest, Isolation Forest, CalibratedClassifierCV |
-| **Numerical Computing** | NumPy / SciPy / Pandas | 2.5.2 / 1.18.0 / 3.0.5 | Telemetry feature extraction, windowing, analysis |
-| **Packet Processing** | Scapy | 2.7.0 | PCAP parsing, layer-2/3/4 packet dissection |
-| **Database** | SQLite3 | Native | Embedded WAL historian and audit ledger |
-| **Frontend Framework** | Vanilla HTML5 / ES6+ | Offline | Zero-dependency, air-gapped industrial HMI |
-| **Styling** | Custom CSS3 | Matte Graphite | Hairline borders, tabular numerals, zero neon clutter |
-| **Simulation Engines** | NS-3 / Contiki-NG Cooja | 3.48 / 4.9 | Discrete-event network and 6LoWPAN mote emulations |
-| **Testing** | pytest / typeguard / Selenium | 9.1.1 / 4.6.0 / 4.x | Automated unit, security, and browser E2E test suites |
+| Layer | Component | Version | Operational Role |
+| :--- | :--- | :--- | :--- |
+| **Language** | Python | 3.14.8 | Primary backend runtime environment |
+| **Web Runtime** | Flask | 3.1.3 | REST API endpoints, SSE event streams, template rendering |
+| | Werkzeug | 3.1.8 | WSGI utilities, secure cookie policies, request handling |
+| **Data & ML** | scikit-learn | 1.9.0 | Random Forest, Isolation Forest, CalibratedClassifierCV |
+| | NumPy | 2.5.2 | Vector transformations, numeric matrices |
+| | SciPy | 1.18.0 | Scientific computing routines |
+| | Pandas | 3.0.5 | Dataset manipulation and CSV processing |
+| **Packet Engine**| dpkt | 1.9.8 | PCAP frame parsing (Ethernet, PPP, RAW IP, TCP/UDP/ICMP) |
+| **Persistence** | SQLite3 | Embedded | WAL-mode metrics historian, configuration store, audit ledger |
+| **Frontend** | Pure HTML5 / CSS3 / ES6 | Native | Locally hosted industrial console with Canvas charts and no external CDN dependencies |
+| **Simulation** | NS-3 Network Simulator | 3.48 | Discrete-event IIoT network topology and traffic simulation |
+| | Contiki-NG / Cooja | Not pinned | 6LoWPAN mote operating system emulation and trace extraction |
+| **Testing** | pytest | 9.1.1 | Automated unit, regression, security, and integration suites |
+| | Typeguard | 4.6.0 | Runtime type validation for security-critical functions |
 
----
-
-## 7. Backend Architecture
-
-The backend (`backend/aegis_gateway/`) is organized into decoupled, modular subsystems:
-
-```
-backend/
-├── aegis_gateway/
-│   ├── adapters.py        # Ingestion adapters for NS-3, Cooja, and PCAP data
-│   ├── api.py             # Flask application routes, REST endpoints, SSE stream
-│   ├── app.py             # Backend application factory and WSGI entry point
-│   ├── config.py          # Environment settings and portable path fallbacks
-│   ├── detection.py       # Hybrid ML inference pipeline and feature extraction
-│   ├── energy.py          # Physics-based energy dissipation mathematical model
-│   ├── iam.py             # Zero-Trust device registry, trust scoring, and RBAC
-│   ├── policy.py          # Contained mitigation engine (DRY_RUN rate-limiting)
-│   ├── runtime.py         # Thread-safe in-process simulation loop and state coordinator
-│   ├── scenarios.py       # Pre-built attack scenario definitions (10 vectors)
-│   ├── schema.py          # Canonical schema definitions and field normalization
-│   ├── security.py        # PBKDF2/scrypt password hashing, session tokens, MFA
-│   └── storage.py         # SQLite database schema, WAL historian, and audit logging
-├── dataset/               # NS-3 PCAPs, CSV feature matrices, and Cooja logs
-├── models/                # Trained Random Forest and Isolation Forest bundles
-├── reports/               # Acceptance screenshots and verification evidence
-├── scripts/               # E2E browser test runners and validation utilities
-├── simulation/            # Preserved NS-3 C++ models and network simulation files
-└── tests/                 # Complete 248-test automated pytest verification suite
-```
-
-### Key Subsystems:
-
-1. **`adapters.py`**: Stream-converts heterogeneous network inputs into timestamped canonical events without loading full traces into RAM.
-2. **`energy.py`**: Calculates instantaneous power consumption from network stress:
-   $$\Delta P_{\text{total}} = P_{\text{idle}} + (\alpha \cdot \text{Rate}_{\text{packet}}) + (\beta \cdot \text{Rate}_{\text{byte}}) + P_{\text{crypto}} + P_{\text{radio-tx}}$$
-3. **`detection.py`**: Computes rolling 1-second statistical feature windows (packet velocity, byte entropy, inter-arrival variance, protocol ratios) and applies Platt-calibrated inference.
-4. **`storage.py`**: Maintains historical metrics, active incident states, and an append-only cryptographic audit trail with SHA-256 state chaining.
+*(Note: Third-party component licensing terms, copyrights, and notices are detailed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and summarized in [Section 19: Licensing and Intellectual Property](#19-licensing-and-intellectual-property).)*
 
 ---
 
-## 8. Frontend Architecture
+## 9. AI/ML Detection Workflow
 
-The frontend is an air-gapped, zero-external-dependency operations console designed according to the **Charcoal / Matte Graphite Design System** (`dashboard-design-reference.png`):
+The gateway computes rolling 1-second statistical feature windows from normalized ingress telemetry.
 
-```
-frontend/
-├── static/
-│   ├── css/
-│   │   └── dashboard.css   # Unified Matte Graphite tokenized stylesheet
-│   └── js/
-│       └── dashboard.js    # Live SSE consumer, Canvas chart renderer, event handlers
-└── templates/
-    ├── attacker.html       # AICG Attack Simulator dual-pane cockpit
-    ├── index.html          # Primary Industrial SOC Operations Console
-    └── login.html          # Authentication console with progressive MFA disclosure
-```
+### Detection Feature Vector (15 Features)
+Defined in `backend/aegis_gateway/detection.py` (`FEATURES` and `feature_mapping`), the inference pipeline extracts a 15-dimensional numerical float vector per evaluation window:
 
-### Design Highlights:
-- **Graphite Hierarchy**: Multi-layer dark surfaces (`#111113` base, `#141416` surface, `#17171a` panel, `#1d1d21` elevated) with restrained hairline borders (`rgba(255,255,255,0.06)`).
-- **Tabular Monospace Numerals**: Strict application of `font-variant-numeric: tabular-nums lining-nums` across all KPI counters, clock displays, gauge labels, and table cells to eliminate layout jitter.
-- **Embedded SVG Line Iconography**: 100% locally embedded SVG glyphs; zero remote CDN requests, font files, or external tracking scripts.
-- **Dual-Pane Cockpit (`/attacker`)**: 50/50 balanced layout separating attack vector configuration from live safety telemetry and containment monitors.
-- **Progressive MFA Drawer (`/login`)**: Sleek authentication interface with dynamic step-up MFA challenge drawer and instant persona switching.
+| # | Feature Identifier | Explanation |
+| :-: | :--- | :--- |
+| 1 | `packet_count` | Observed packet count in the window (`float`, minimum 1.0) |
+| 2 | `byte_count` | Total bytes transferred across the window (`float`) |
+| 3 | `packet_rate` | Packet velocity in packets per second (`float`) |
+| 4 | `byte_rate` | Data transfer velocity in bytes per second (`float`) |
+| 5 | `unique_sources` | Count of distinct source IP addresses in window (`float`, can be 0.0) |
+| 6 | `unique_destinations` | Count of distinct destination IP addresses in window (`float`, can be 0.0) |
+| 7 | `packet_size` | Window packet size taken from `event.packet_size` (`float`) |
+| 8 | `udp_ratio` | Binary protocol indicator: 1.0 if protocol is UDP, else 0.0 |
+| 9 | `tcp_ratio` | Binary protocol indicator: 1.0 if protocol is TCP, else 0.0 |
+| 10 | `icmp_ratio` | Binary protocol indicator: 1.0 if protocol is ICMP or ICMPv6, else 0.0 |
+| 11 | `syn_ratio` | Binary flag indicator: 1.0 if TCP SYN flag is present, else 0.0 |
+| 12 | `flow_count` | Flow count derived from unique sources (`float`, minimum 1.0) |
+| 13 | `cpu_activity` | Modeled edge device CPU utilization percentage (`float`) |
+| 14 | `memory_activity` | Modeled edge device memory utilization percentage (`float`) |
+| 15 | `energy_deviation` | Relative energy rate deviation from baseline (`float`, can be negative) |
 
----
+### Hybrid Inference Pipeline
+The `HybridDetector` engine in `backend/aegis_gateway/detection.py` combines deterministic heuristics with trained machine learning estimators:
 
-## 9. AI/ML Workflow
-
-```mermaid
-flowchart LR
-    A["Raw Ingress Telemetry"] --> B["1-Second Rolling Window"]
-    B --> C["Feature Extraction (12 Features)"]
-    C --> D{"Detection Pipeline"}
-    D -->|Parametric| E["Platt-Calibrated Random Forest"]
-    D -->|Non-Parametric| F["Isolation Forest (Out-of-Distribution)"]
-    D -->|Deterministic| G["Protocol Rate Threshold Rules"]
-    E & F & G --> H["Ensemble Arbiter"]
-    H --> I["Calibrated Anomaly Probability"]
-    I --> J{"Threshold Decision (>0.85)"}
-    J -->|Yes| K["Attack Incident Triggered"]
-    J -->|No| L["Benign Baseline Maintained"]
-```
-
-### Feature Vector (12 Canonical Features):
-1. `packet_rate`: Packets per second across window.
-2. `byte_rate`: Bytes per second across window.
-3. `mean_packet_size`: Average packet size in bytes.
-4. `packet_size_std`: Standard deviation of packet sizes.
-5. `udp_ratio`: Proportion of UDP packets in window.
-6. `tcp_syn_ratio`: Proportion of TCP SYN packets in window.
-7. `icmp_ratio`: Proportion of ICMP packets in window.
-8. `unique_src_ips`: Number of unique source addresses.
-9. `src_ip_entropy`: Shannon entropy of source IP distribution.
-10. `modeled_power_mw`: Modeled instantaneous power dissipation in mW.
-11. `modeled_cpu_pct`: Modeled edge processor utilization percentage.
-12. `inter_arrival_variance`: Variance in packet arrival intervals.
-
-### Model Assurance & Calibration:
-- **Zero Leakage**: Models are trained and evaluated across strictly partitioned campaign groups (`StratifiedGroupKFold`), preventing synthetic trace correlation between train and test splits.
-- **Platt Probability Calibration**: Probability outputs are calibrated using sigmoid fitting via `CalibratedClassifierCV`, ensuring that an anomaly score of $0.90$ represents a true empirical likelihood of attack without saturation distortion.
+1. **Feature Mapping**: Telemetry events are transformed into 15 scalar floats via `feature_mapping(event)`.
+2. **Rule-Based Heuristic Evaluation**: Evaluates threshold conditions (such as high packet rate surges, source IP expansion, SYN flag observation, and concurrent energy deviation) to compute a bounded heuristic score ($S_{\text{rule}} \in [0.0, 1.0]$) and generate human-readable explainability evidence. When no trained model bundle is loaded, this rule engine remains fully operational as an autonomous fallback (`MODEL_VERSION = "rules-v2-untrained"`).
+3. **Supervised Classification**: When a model bundle is loaded, a Random Forest estimator computes class probabilities across normal and attack classes. If the bundle metadata indicates calibration (`calibrated = True`), the Platt-scaled probability is exposed as `calibrated_probability`.
+4. **Outlier Anomaly Scoring**: An `IsolationForest` estimator measures tree-path isolation depth using `decision_function`, which is mapped to a bounded anomaly score ($S_{\text{iForest}} \in [0.0, 1.0]$) to capture out-of-distribution patterns without relying on geometric distance.
+5. **Weighted Score Fusion**: When a model bundle is loaded, the final decision score combines heuristic rules and ML estimators:
+   $$\text{Score} = \min(1.0,\; 0.40 \cdot S_{\text{rule}} + 0.45 \cdot S_{\text{RF}} + 0.15 \cdot S_{\text{iForest}})$$
+   If no model bundle is loaded, the score is determined solely by heuristic rules ($\text{Score} = \min(1.0, S_{\text{rule}})$). A window triggers an attack state when $\text{Score} \ge 0.50$. Heuristic rules contribute to the weighted score and explainability trail rather than forcing an immediate final decision prior to ML evaluation.
 
 ---
 
-## 10. DDoS Simulation Methodology
+## 10. DDoS Simulation & Offline Trace Methodology
 
-The project incorporates multi-tier DDoS simulation evidence combining discrete-event simulation, mote emulation, and in-process scenario generation:
+The project incorporates both in-process synthetic telemetry generation for real-time console demonstration and offline discrete-event/mote simulation tools for research dataset generation.
 
-### 1. NS-3 Discrete-Event Network Simulation
-Custom C++ simulation models located in `backend/simulation/ns3/`:
-- **`ddos_udp.cc`**: Multi-attacker high-rate volumetric UDP flood against industrial gateway topology.
-- **`ddos_udp_baseline_v1.cc`**: Calibrated baseline benign IIoT telemetry mix.
-- **`ddos_udp_low_v1.cc`**: Low-rate pulse DDoS designed to evade static rate thresholds.
-- **`ddos_udp_mid_v1.cc`**: Medium-intensity coordinated flood across distributed sensor nodes.
-- **`ddos_udp_midlow_v1.cc`**: Intermittent pulse assault with randomized bursts.
-- **`normal_iiot.cc`**: Standard benign SCADA polling and telemetry communication.
+### In-Process Telemetry Scenario Generator (11 Profiles)
+The scenario generator (`backend/aegis_gateway/scenarios.py`) produces simulated `TelemetryEvent` objects entirely in memory for interactive evaluation.
 
-### 2. Contiki-NG / Cooja 6LoWPAN Mote Emulation
-Emulates physical sensor motes running the Contiki-NG operating system, capturing low-power IEEE 802.15.4 frame exchanges, RPL routing overhead, and sleep-deprivation energy drain under attack.
+> [!IMPORTANT]
+> **Safe In-Process Telemetry Generation**: In-process scenarios generate simulated `TelemetryEvent` objects entirely in memory; they **never transmit network packets** over physical or virtual network interfaces.
 
-### 3. In-Process Scenario Catalogue (`backend/aegis_gateway/scenarios.py`)
-Enables live, controlled simulation without external network transmission:
-1. `BENIGN_BASELINE`: Normal factory sensor telemetry.
-2. `UDP_FLOOD_HIGH`: Volumetric 5000 pkt/s UDP flood.
-3. `UDP_FLOOD_LOW`: Sub-threshold 200 pkt/s stealth pulse.
-4. `SYN_FLOOD`: TCP handshake exhaustion.
-5. `ENERGY_DRAIN`: Malicious sleep deprivation targeting mote batteries.
-6. `SLOWLORIS`: Low-and-slow HTTP connection starvation.
-7. `ICMP_SWARM`: Distributed ICMP echo request saturation.
-8. `MODBUS_INJECTION`: Unauthorized Modbus/TCP command injection.
-9. `MULTI_VECTOR`: Coordinated multi-stage volumetric + protocol assault.
-10. `REPLAY_ATTACK`: Stolen token / packet sequence replay.
+- **1 Normal Baseline Profile:**
+  - `normal`: "Normal IIoT rhythm" — In-memory periodic baseline telemetry profile modeling nominal operational activity and quiescent energy dissipation. Generated normal telemetry events use the protocol value assigned by the generator (UDP sensor datagrams) and do not transmit MQTT network packets.
+- **10 Modeled Anomaly Profiles:**
+  1. `udp_flood`: Modeled high-rate UDP datagram burst profile with high simulated packet velocity; no packets leave the process.
+  2. `syn_flood`: Modeled TCP SYN-heavy profile with elevated SYN flag presence; does not cause actual network connection-table exhaustion.
+  3. `icmp_flood`: Modeled ICMP-heavy profile with elevated ICMP indicator; does not disrupt physical control systems.
+  4. `burst_exhaustion`: Short, intermittent high-intensity modeled bursts designed to stimulate the modeled energy dissipation calculator.
+  5. `slow_rate`: Low-frequency modeled TCP connection profile representing persistent resource pressure without exceeding volumetric thresholds.
+  6. `coap_anomaly`: Simulated CoAP-style protocol profile (UDP destination port 5683); does not perform actual CoAP parsing or packet transmission.
+  7. `mqtt_anomaly`: Simulated MQTT/MQTT-SN-style burst profile (TCP destination port 1883); does not require or exhaust an actual MQTT message broker.
+  8. `rpl_anomaly`: Simulated RPL/6LoWPAN control-plane anomaly profile (ICMPv6); does not decode RPL frames or induce actual routing loops.
+  9. `modbus_anomaly`: Simulated industrial Modbus-style query profile (TCP destination port 502); does not parse Modbus payloads or cause actual RTU exhaustion.
+  10. `mixed_vector`: Multi-protocol hybrid profile alternating between modeled UDP, TCP, and ICMP windows.
+
+### Offline Discrete-Event & Sensor OS Simulation (NS-3 & Cooja)
+In addition to the in-process scenario generator, the project utilizes external simulation frameworks to produce realistic network capture traces for offline evaluation, detailed in [backend/simulation/README.md](backend/simulation/README.md):
+
+- **Custom NS-3 C++ Discrete-Event Models**: The repository includes standalone C++ simulation models (`backend/simulation/ns3/ddos_udp*.cc` and `backend/simulation/normal_iiot.cc`) written against the NS-3 Network Simulator (tested with NS-3.48 under GNU GPLv2). These simulate discrete-event packet traffic, network topology routing, and UDP attack vectors across simulated edge devices.
+- **PCAP Trace Generation and dpkt Ingestion**: Executing NS-3 simulations generates standard `.pcap` capture files. The gateway's adapter engine (`backend/aegis_gateway/adapters.py`) decodes these offline traces using `dpkt 1.9.8` (BSD-3-Clause) to reproduce network event streams for ingestion without live packet replay.
+- **Contiki-NG / Cooja Mote Simulation**: Cooja simulator traces capture low-power wireless 6LoWPAN mote radio duty-cycles and energy consumption logs, providing realistic edge constrained device telemetry inputs.
+- **Difference from In-Process Generator**:
+  - *In-Process Generator*: Synthesizes in-memory `TelemetryEvent` objects directly within Python for immediate interactive demonstration, API testing, and UI validation without network packets.
+  - *NS-3 / Cooja Simulators*: Standalone external network simulators modeling physical PHY/MAC/routing layers that compile and run outside the gateway, generating static trace and PCAP files that are ingested offline.
 
 ---
 
-## 11. Installation Instructions
+## 11. Dashboard Screenshots
 
-### Prerequisites:
-- Linux (Ubuntu 22.04+, Debian 12+, Kali Linux 2024+)
-- Python 3.14+ (or Python 3.11+)
-- Git 2.34+
+The industrial Matte Graphite dashboard provides comprehensive operational visibility without external CDN dependencies. (The primary operations console view is showcased above in [Section 2: Dashboard Preview](#2-dashboard-preview)).
 
-### Clone & Environment Setup:
+### 1. Network Topology (Normal Baseline State)
+![Network Topology Baseline State](backend/reports/evidence/screenshots/topology_panel_state1_normal.png)
+*Figure 2: Normal Baseline State — Simulated dashboard visualization displaying modeled legitimate sensor nodes reporting nominal telemetry to gateway and PLC sink without transmitting physical network packets.*
+
+### 2. Network Topology (Under Attack State)
+![Network Topology Under Attack](backend/reports/evidence/screenshots/topology_panel_state2_attack.png)
+*Figure 3: Topology View Under Attack — Simulated console display illustrating distributed attacker nodes generating multi-vector traffic anomalies with active visual alert indications.*
+
+### 3. Alert & Incident Lifecycle Management
+![Multi-Stage Incident Lifecycle](backend/reports/evidence/screenshots/04_alert_lifecycle.png)
+*Figure 4: Alert and Incident Lifecycle Panel — Sequential multi-window incident correlation tracking attacks from detection to contained mitigation.*
+
+### 4. Operator Attack Simulator Cockpit
+![Operator Attack Cockpit](backend/reports/evidence/screenshots/11_operator_attacker_view_only.png)
+*Figure 5: Operator Attack Cockpit — Interactive vector control panel under strict dry-run software containment.*
+
+---
+
+## 12. Installation and Setup
+
+### Tested Environment
+- **Operating System:** Linux (tested on Kali Linux x86_64)
+- **Python Version:** Python 3.14.8 (tested version)
+- **Database:** SQLite3
+- **Version Control:** Git
+
+### Clone the Repository
 ```bash
-# Clone repository
-git clone https://github.com/your-org/AI-Edge-DDoS-Gateway.git
-cd AI-Edge-DDoS-Gateway
+git clone https://github.com/jaydeepm25/AI-Based-Cyber-Security-Gateway-AICG.git
+cd AI-Based-Cyber-Security-Gateway-AICG
+```
 
-# Create Python virtual environment
+### Virtual Environment Setup
+```bash
+# Create an isolated Python virtual environment
 python3 -m venv .venv
-source .venv/bin/activate
 
-# Install dependencies
-pip install --upgrade pip
+# Activate the virtual environment
+source .venv/bin/activate
+```
+
+### Dependency Installation
+```bash
+# Install core runtime dependencies
 pip install -r requirements.txt
+
+# Install testing and development dependencies
 pip install -r requirements-dev.txt
 ```
 
 ---
 
-## 12. Execution Instructions
+## 13. Running the Application
 
-### Running the Gateway:
+### Development / Demonstration Mode (Default)
+By default, the gateway operates in development mode (`AEGIS_PRODUCTION=0`) with demonstration accounts enabled for local evaluation:
+
 ```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Start the Aegis Gateway service
+# Launch the gateway application in development mode
 python3 backend/app.py
 ```
 
-The gateway will initialize the SQLite historian at `backend/data/aegis_gateway.sqlite3` and bind to `http://127.0.0.1:8000`.
+The gateway console will be accessible at:
+```text
+http://127.0.0.1:8000
+```
 
-### Accessing the Interfaces:
-- **Industrial Operations Console**: [`http://127.0.0.1:8000/`](http://127.0.0.1:8000/)
-- **Attack Simulator Cockpit**: [`http://127.0.0.1:8000/attacker`](http://127.0.0.1:8000/attacker)
-- **Login Portal**: [`http://127.0.0.1:8000/login`](http://127.0.0.1:8000/login)
+#### Demonstration Account Security & Credential Override
+> [!WARNING]
+> Built-in demonstration credentials must **never** be used in production environments.
 
-### Default Lab Credentials:
-| Account Role | Username | Password | Simulated MFA Token |
-|---|---|---|---|
-| **System Administrator** | `admin` | `Admin@AICG2026!` | `123456` |
-| **OT Console Operator** | `operator` | `Operator@AICG2026!` | `123456` |
+In development mode, demonstration accounts (`admin` and `operator`) are provisioned automatically during initial database creation unless disabled by setting `AEGIS_DEMO_ACCOUNTS=0`.
+
+Prior to initializing the database, developers can override the default administrator and operator credentials via environment variables:
+```bash
+# Optional: Override initial administrator username (defaults to "admin")
+export AEGIS_INITIAL_ADMIN_USERNAME="myadmin"
+
+# Optional: Override initial administrator password (compatibility alias: AEGIS_ADMIN_PASSWORD)
+export AEGIS_INITIAL_ADMIN_PASSWORD="<custom-secure-admin-password>"
+
+# Optional: Override initial operator password
+export AEGIS_INITIAL_OPERATOR_PASSWORD="<custom-secure-operator-password>"
+
+# Disable demonstration accounts entirely in development:
+export AEGIS_DEMO_ACCOUNTS=0
+```
+
+### Production Configuration Mode
+In production configuration mode (`AEGIS_PRODUCTION=1`), demonstration accounts are disabled by default, insecure default lab fallback keys are rejected, and the gateway enforces fail-fast credential validation on startup.
+
+> [!CAUTION]
+> **Research Platform Boundary**: Activating production configuration flags enforces secure credential isolation and rejects lab default keys; however, it does **not** make this research/demonstration application production-ready. The standalone launcher (`python3 backend/app.py`) runs Flask's built-in development server and is provided for demonstration, testing, and evaluation—not for production deployment.
+
+The following configuration variables govern production mode:
+- `AEGIS_PRODUCTION=1` — Activates production security enforcement. *(Note: `AEGIS_ENV=production` is not a supported setting).*
+- `AEGIS_SECRET_KEY` — Mandatory production session signing key (the default lab fallback key is rejected).
+- `AEGIS_MASTER_KEY` — Mandatory edge device HMAC key (`AEGIS_DEVICE_MASTER_KEY` is supported as an alternative; the default lab fallback key is rejected).
+- `AEGIS_INITIAL_ADMIN_PASSWORD` — Mandatory administrator password required to provision the initial administrator account on first database creation (`AEGIS_ADMIN_PASSWORD` is accepted as a backward-compatibility alias).
+- `AEGIS_INITIAL_ADMIN_USERNAME` — Optional administrator username (defaults to `admin`).
+
+> [!WARNING]
+> **Existing Database Upgrade Warning**: Switching an existing database from development mode to production mode does not automatically remove previously seeded demonstration accounts (`admin` or `operator`). Administrators must audit the user store and remove legacy demonstration credentials or initialize a fresh, properly provisioned production database.
+
+```bash
+# Example: Setting mandatory production security environment variables
+export AEGIS_PRODUCTION=1
+export AEGIS_SECRET_KEY="<custom-production-secret-key>"
+export AEGIS_MASTER_KEY="<custom-device-master-key>"
+# Or alternatively: export AEGIS_DEVICE_MASTER_KEY="<custom-device-master-key>"
+export AEGIS_INITIAL_ADMIN_USERNAME="admin"
+export AEGIS_INITIAL_ADMIN_PASSWORD="<custom-initial-admin-password>"
+
+# Launch the gateway application (runs local Flask development server for testing)
+python3 backend/app.py
+```
 
 ---
 
-## 13. Testing Instructions
+## 14. Testing and Verification
 
-The project features a comprehensive 248-test automated quality assurance suite:
+The repository includes a comprehensive automated regression suite verifying security controls, cryptographic token caching, API boundary enforcement, ML model inference, and dpkt PCAP parsing.
 
+### Verified Local Test Execution
+- **Test Result:** **261 passed**
+- **Execution Time:** **74.07 seconds**
+- **Verification Commit:** `7752237`
+- **Verification Date:** 21 November 2026
+- **Test Environment:** Linux (x86_64), Python 3.14.8, pytest 9.1.1, typeguard 4.6.0
+
+*(Note: The test results cited above represent a verified local test execution. Continuous Integration workflows are planned in the project roadmap.)*
+
+### Running the Test Suite
 ```bash
-# Run all automated unit, integration, and security tests
+# Run the complete test suite
 pytest
 
 # Run tests with verbose output
 pytest -v
 
-# Run specific test modules
-pytest backend/tests/test_admin_security_layer.py
-pytest backend/tests/test_six_attacker_topology.py
-pytest backend/tests/test_audit_concurrency.py
-```
-
-### Verified Test Results:
-```
-============================= test session starts ==============================
-platform linux -- Python 3.14.8, pytest-9.1.1, pluggy-1.6.0
-collected 248 items
-
-backend/tests/test_adapters.py .....                                     [  2%]
-backend/tests/test_admin_security_layer.py .....................         [ 10%]
-backend/tests/test_api_and_runtime.py .......................            [ 19%]
-backend/tests/test_api_security_and_hardening.py ....................    [ 27%]
-backend/tests/test_audit_concurrency.py ....                             [ 29%]
-backend/tests/test_autonomous_lifecycle_regression.py .....              [ 31%]
-backend/tests/test_detection_and_ml.py ............                      [ 36%]
-backend/tests/test_energy_and_iam.py ..........                          [ 40%]
-backend/tests/test_in_process_enforcement.py ....................        [ 48%]
-backend/tests/test_model_configuration.py ........                       [ 51%]
-backend/tests/test_policy_and_incidents.py .....                         [ 53%]
-backend/tests/test_scenarios.py .....                                    [ 55%]
-backend/tests/test_schema.py .......                                     [ 58%]
-backend/tests/test_six_attacker_topology.py ........                     [ 61%]
-backend/tests/test_storage_and_export.py .....                           [ 63%]
-backend/tests/test_wave1_security_hardening.py ......................... [ 73%]
-.....................                                                    [ 82%]
-backend/tests/test_wave2_ml_validity.py ...............                  [ 88%]
-backend/tests/test_wave3a_per_device_recovery.py ........                [ 91%]
-backend/tests/test_wave3b_mitigation_reconciliation.py ................. [ 98%]
-....                                                                     [100%]
-
-======================== 248 passed in 68.73s (0:01:08) ========================
+# Run specific subsystem test suites
+pytest backend/tests/test_adapters.py
+pytest backend/tests/test_production_security_bootstrap.py
+pytest backend/tests/test_wave1_security_hardening.py
 ```
 
 ---
 
-## 14. Screenshots & Interface Evidence
+## 15. Repository Structure
 
-### 1. Industrial Operations Console (Main Dashboard)
-![Industrial Operations Console](backend/reports/evidence/screenshots/02_admin_dashboard_landing.png)
-*High-density Matte Graphite telemetry view displaying real-time packet ingress, energy dissipation, dynamic trust indicators, and active threat matrices.*
-
-### 2. Live Plant Mimic Topology
-![Plant Mimic Topology](backend/reports/evidence/screenshots/topology_panel_state1_normal.png)
-*Interactive topological mimic tracking multi-attacker distribution, field sensor states, and gateway mitigation status.*
-
-### 3. Authentication & Progressive MFA Drawer
-![Login & MFA Portal](backend/reports/evidence/screenshots/01_login_page.png)
-*Secure persona login console featuring integrated progressive-disclosure simulated MFA step-up authentication.*
-
-### 4. AICG Attack Simulator Cockpit
-![Attack Simulator Cockpit](backend/reports/evidence/screenshots/11_operator_attacker_view_only.png)
-*Dual-pane execution cockpit with real-time vector parameter controls and strict dry-run physical containment telemetry.*
-
-### 5. Multi-Window Alert & Incident Lifecycle
-![Alert & Incident Lifecycle](backend/reports/evidence/screenshots/04_alert_lifecycle.png)
-*Sequential incident lifecycle progression tracking alerts from initial detection through contained mitigation and autonomous device recovery.*
-
----
-
-## 15. Project Structure
+The selected canonical project structure reflects active repository components and root compatibility symlinks:
 
 ```
-AI-Edge-DDoS-Gateway/
+AI-Based-Cyber-Security-Gateway-AICG/
 ├── .gitignore                          # Tailored Python, ML, NS-3, and frontend exclusion rules
 ├── LICENSE                             # MIT Open-Source License (Gateway Application)
 ├── THIRD_PARTY_NOTICES.md              # Verified third-party software licenses and notices
-├── pytest.ini                          # Test configuration and runner paths
+├── pytest.ini                          # Test runner and warning filter configuration
 ├── README.md                           # Master technical project documentation
-├── requirements.txt                    # Production runtime dependencies
+├── requirements.txt                    # Core runtime dependencies
+├── requirements-dev.txt                # Development and test runner dependencies
+├── dashboard/                          # Standalone dashboard launcher (app.py)
+├── data -> backend/data                # Root compatibility symlink to database storage
+├── dataset -> backend/dataset          # Root compatibility symlink to research datasets
+├── models -> backend/models            # Root compatibility symlink to ML models
+├── simulation -> backend/simulation    # Root compatibility symlink to NS-3 models
 ├── backend/
-│   ├── app.py                          # Flask application launcher
+│   ├── app.py                          # Flask application launcher (127.0.0.1:8000)
 │   ├── aegis_gateway/                  # Core gateway Python package
-│   ├── dataset/                        # Simulation PCAPs, feature CSVs, and Cooja logs
-│   ├── models/                         # Calibrated ML bundles (Joblib)
+│   │   ├── adapters.py                 # dpkt PCAP, NS-3, and Cooja trace parsing
+│   │   ├── api.py                      # Flask REST endpoints, SSE stream, and session guards
+│   │   ├── config.py                   # Environment settings and fail-fast validation
+│   │   ├── detection.py                # 15-dimensional ML feature extraction and HybridDetector
+│   │   ├── energy.py                   # Deterministic physics-informed energy and resource model
+│   │   ├── iam.py                      # Zero-Trust device registry, trust scoring, and RBAC
+│   │   ├── ml.py                       # Random Forest, Isolation Forest, and dataset generator
+│   │   ├── policy.py                   # Contained mitigation engine (DRY_RUN rate-limiting)
+│   │   ├── runtime.py                  # Thread-safe in-process simulation loop coordinator
+│   │   ├── scenarios.py                # Scenario definitions (1 normal + 10 anomaly profiles)
+│   │   ├── schema.py                   # Canonical schema definitions and field normalization
+│   │   ├── security.py                 # Werkzeug password hashing, session tokens, simulated MFA
+│   │   └── storage.py                  # SQLite schema, WAL historian, and audit logging
+│   ├── dataset/                        # Simulation PCAPs, feature CSVs, and Cooja logs (Rights Reserved)
+│   │   └── README.md                   # Dataset provenance and non-permissive terms
+│   ├── models/                         # Calibrated ML bundles (Joblib) (Rights Reserved)
+│   │   └── README.md                   # Model provenance and non-permissive terms
 │   ├── reports/
 │   │   ├── evidence/screenshots/       # High-resolution UI acceptance screenshots
 │   │   └── srs/                        # Software Requirements Specifications & diagrams
 │   ├── scripts/                        # Automated browser test and verification scripts
 │   ├── simulation/
+│   │   ├── README.md                   # NS-3 simulation models documentation (GPLv2)
 │   │   ├── normal_iiot.cc              # Baseline NS-3 IIoT simulation model (GPLv2)
 │   │   └── ns3/                        # Custom C++ NS-3 DDoS simulation scripts (GPLv2)
 │   └── tests/                          # Automated pytest verification suite (261 tests)
 ├── docs/                               # Architecture blueprints, demo guides, and plans
 └── frontend/
-    ├── static/                         # Static CSS tokens and ES6 streaming modules
-    └── templates/                      # Jinja2 HTML5 interface templates
+    ├── README.md                       # Frontend architecture and UI guidelines
+    ├── static/
+    │   ├── css/
+    │   │   └── dashboard.css           # High-contrast Matte Graphite design tokens
+    │   └── js/
+    │       └── dashboard.js           # Real-time SSE subscriber and Canvas renderers
+    └── templates/
+        ├── attacker.html               # Attack simulation console template
+        ├── index.html                  # Operator / Admin security dashboard template
+        └── login.html                  # Session login and MFA verification template
 ```
 
 ---
 
-## 16. Future Improvements
+## 16. Security and Limitations
 
-1. **eBPF / XDP Data-Plane Acceleration**: Implement in-kernel eBPF/XDP packet filter drivers to offload high-velocity volumetric filtering before reaching user-space sockets.
-2. **Hardware Security Module (HSM) Integration**: Bind Zero-Trust identity keys and cryptographic audit log hashes to physical TPM 2.0 or secure element microchips.
-3. **P4 Programmable Switch Pipeline**: Translate gateway rate-limiting policies into P4 runtime rules for multi-gigabit industrial Ethernet switches.
-4. **Federated Edge Learning**: Enable distributed collaborative model weight updates across multiple plant gateways without centralizing raw telemetry logs.
+### Security Architecture Disclosures
+1. **Simulated Multi-Factor Authentication (MFA)**:
+   The current implementation uses simulated MFA with a fixed demonstration token for user-interface and API step-up authentication workflows. It is strictly an educational simulation and does not provide production-grade TOTP, FIDO2, hardware MFA, or real external MFA integration.
+2. **Response Modes and In-Process Containment**:
+   - **Default Mode (`DRY_RUN`)**: The gateway defaults to `DRY_RUN` response mode, evaluating mitigation policies and logging planned containment actions without modifying event streams.
+   - **In-Process Telemetry Mitigation (`ACTIVE` / `ENFORCING`)**: When configured in `ACTIVE` or `ENFORCING` mode, mitigation policies (token-bucket rate limiting, in-process stream filtering, and simulated device quarantine) affect events strictly inside the application's in-process telemetry pipeline.
+   - **No Physical Network Enforcement**: No mode installs host kernel firewall rules (`iptables`, `nftables`, `pf`), modifies system routing tables, or controls physical network interfaces. The gateway does not perform physical packet filtering or network-layer enforcement.
+3. **Research & Demonstration Gateway**:
+   AICG is designed as a cybersecurity engineering research platform and demonstration gateway for Industry 4.0 evaluation. It is **not** a production-hardened operating system firewall or host intrusion prevention system. Production readiness is not claimed.
+4. **Production Credential Provisioning & Database Lifecycle**:
+   - **Initial Administrator Requirement**: A fresh production database requires an explicitly configured initial administrator password via `AEGIS_INITIAL_ADMIN_PASSWORD` (or compatibility alias `AEGIS_ADMIN_PASSWORD`).
+   - **Demonstration Account Suppression**: Production mode (`AEGIS_PRODUCTION=1`) suppresses automatic seeding of development demonstration accounts for a fresh database.
+   - **Existing Database Retention Warning**: Switching an existing development database to production mode does not automatically remove previously seeded demonstration accounts. Operators should review and remove legacy demonstration credentials or deploy a clean, properly provisioned production database.
+   - **Simulated MFA Boundary**: The administrative interface still uses a simulated MFA workflow with a fixed demonstration token and is not production-grade external MFA.
 
 ---
 
-## 17. Contributors & Acknowledgements
+## 17. Roadmap
+
+- [ ] **GitHub Actions CI**: Automatically execute the regression test suite on pushes and pull requests.
+- [ ] **eBPF / XDP Data-Plane In-Kernel Acceleration**: Implement eBPF/XDP bypass filters to drop volumetric floods directly in network drivers before socket traversal.
+- [ ] **Hardware Security Module (HSM) Integration**: Bind Zero-Trust device token cryptographic keys and audit hashes to physical TPM 2.0 or hardware secure elements.
+- [ ] **P4 Programmable Industrial Switch Pipeline**: Compile gateway policy rules into P4 runtime definitions for multi-gigabit industrial Ethernet hardware.
+- [ ] **Federated Edge Learning**: Enable privacy-preserving collaborative model weight training across multiple distributed plant gateways.
+- [ ] **Hardware-Backed FIDO2 / TOTP Authentication**: Replace simulated MFA with WebAuthn/FIDO2 hardware security keys.
+
+---
+
+## 18. Contributors and Acknowledgements
 
 Developed as an advanced cybersecurity engineering platform for resilient Industry 4.0 edge automation.
 
+**Author & Copyright Holder:** JAYDEEP JOTIRAM MULIK
+
 Special thanks to:
-- The **NS-3 Project** for high-fidelity discrete-event network simulation tools.
-- The **Contiki-NG & Cooja Communities** for 6LoWPAN mote emulation capabilities.
-- The **scikit-learn and SciPy Teams** for foundational statistical and machine learning libraries.
+- The **NS-3 Project** for discrete-event network simulation frameworks.
+- The **Contiki-NG & Cooja Communities** for 6LoWPAN low-power wireless emulation tools.
+- The **scikit-learn, NumPy, and SciPy Teams** for foundational scientific computing libraries.
+- The **dpkt Development Team** for lightweight PCAP frame parsing tools.
 
 ---
 
-## 18. Licensing & Intellectual Property
+## 19. Licensing and Intellectual Property
 
 **Copyright (c) 2026 JAYDEEP JOTIRAM MULIK**
 
 The AICG repository incorporates distinct licensing boundaries across its components:
 
 ### 1. Gateway Application Source Code (MIT License)
-The original Python backend source code located in `backend/aegis_gateway/`, user interface assets in `frontend/`, maintenance scripts in `backend/scripts/`, and automated test suites in `backend/tests/` are licensed under the standard [MIT License](LICENSE).
+The original Python backend source code in `backend/aegis_gateway/`, user interface assets in `frontend/`, maintenance scripts in `backend/scripts/`, and automated test suites in `backend/tests/` are licensed under the standard [MIT License](LICENSE).
 
 ### 2. NS-3 Network Simulation Models (GNU GPLv2)
-The custom C++ discrete-event network simulation programs in `backend/simulation/ns3/` (`ddos_udp*.cc`) and `backend/simulation/normal_iiot.cc` are developed against the NS-3 Network Simulator API headers. In accordance with NS-3 upstream licensing architecture, these simulation components are governed by the **GNU General Public License version 2 (GPL-2.0-only)**. See [backend/simulation/README.md](backend/simulation/README.md) for full simulation details.
+The custom C++ simulation programs in `backend/simulation/ns3/` (`ddos_udp*.cc`) and `backend/simulation/normal_iiot.cc` are developed against NS-3 Network Simulator API headers. In accordance with NS-3 upstream licensing requirements, these simulation components are governed by the **GNU General Public License version 2 (GPL-2.0-only)**. See [backend/simulation/README.md](backend/simulation/README.md).
 
 ### 3. Simulation Datasets and Pre-Trained Machine Learning Models
-The synthetic IIoT telemetry datasets, feature CSV files, and raw PCAP packet captures in `backend/dataset/`, as well as pre-trained model bundles in `backend/models/` (`realistic_detector_v1.joblib` and `hybrid_detector.joblib`), are strictly excluded from the root MIT License. They are **not** licensed under CC0-1.0, CC-BY, MIT, or any other open-source license, and no additional reuse permission is granted. All rights are reserved by the copyright holder (JAYDEEP JOTIRAM MULIK).
+The synthetic IIoT telemetry datasets, feature CSV files, and raw PCAP packet captures in `backend/dataset/`, as well as pre-trained model bundles in `backend/models/` (`realistic_detector_v1.joblib` and `hybrid_detector.joblib`), are strictly excluded from the root MIT License. They are **not** licensed under CC0-1.0, CC-BY, MIT, or any other open-source license, and no additional reuse permission is granted. All rights are reserved by the copyright holder (JAYDEEP JOTIRAM MULIK). See [backend/dataset/README.md](backend/dataset/README.md) and [backend/models/README.md](backend/models/README.md).
 
 ### 4. Third-Party Open-Source Components
 All third-party libraries, frameworks, and tools (including Flask, scikit-learn, NumPy, Joblib, dpkt, and pytest) remain licensed under their respective upstream open-source licenses (BSD-3-Clause, MIT, and Apache-2.0). Complete verified dependency notices, copyright declarations, and license terms are detailed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
