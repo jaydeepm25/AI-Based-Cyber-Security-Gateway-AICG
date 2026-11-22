@@ -12,14 +12,7 @@ An edge cybersecurity gateway research prototype engineered for Industrial IoT (
 
 ---
 
-## 2. Dashboard Preview
-
-![AICG Industrial Security Operations Console](backend/reports/evidence/screenshots/02_admin_dashboard_landing.png)
-*Figure 1: AICG Industrial Security Operations Console — Real-time telemetry monitoring, Zero-Trust device trust tracking, and containment controls.*
-
----
-
-## 3. Project Overview
+## 1. Project Overview
 
 **AI-Based Cyber Security Gateway for Industry 4.0 (AICG)** (internally designated **Aegis Gateway**) is an edge cybersecurity research prototype and demonstrator engineered to evaluate defense mechanisms for resource-constrained field networks (such as 6LoWPAN, Modbus/TCP, and MQTT) against DDoS-style traffic anomalies and modeled network/resource exhaustion behaviors.
 
@@ -27,7 +20,14 @@ The demonstrator processes normalized telemetry events, in-process simulated sce
 
 ---
 
-## 4. Problem Statement
+## 2. Dashboard Preview
+
+![AICG Industrial Security Operations Console](backend/reports/evidence/screenshots/02_admin_dashboard_landing.png)
+*Figure 1: AICG Industrial Security Operations Console — Real-time telemetry monitoring, Zero-Trust device trust tracking, and containment controls.*
+
+---
+
+## 3. Problem Statement
 
 Modern Industry 4.0 deployments exhibit critical cybersecurity vulnerabilities at the OT edge:
 
@@ -38,7 +38,7 @@ Modern Industry 4.0 deployments exhibit critical cybersecurity vulnerabilities a
 
 ---
 
-## 5. Proposed Solution
+## 4. Proposed Solution
 
 The **Aegis Gateway** evaluates defense-in-depth edge protection across a logical/simulated industrial network architecture:
 
@@ -71,7 +71,7 @@ Deterministic mW modeling   RF (Calibrated if flagged)    Trust score (0..100)
 
 ---
 
-## 6. Key Features
+## 5. Key Features
 
 - **Multi-Source Ingestion Pipeline**: Ingests normalized telemetry events from multiple ingestion adapters, including offline NS-3 discrete-event traces, Contiki-NG / Cooja mote logs, standard PCAP replays (via dpkt), and in-process scenario generators through a unified canonical schema (`CANONICAL_FIELDS`).
 - **Physics-Informed Energy & Resource Modeling**: Generates deterministic, physics-informed, MODELLED energy and resource estimates (quiescent and active power dissipation in mW, window energy in mJ, and modeled CPU, memory, and radio duty-cycle metrics) derived from observed packet velocity, protocol complexity, and packet-size efficiency. The module functions explicitly as a deterministic mathematical estimator and is **not** a physical hardware power meter.
@@ -85,7 +85,7 @@ Deterministic mW modeling   RF (Calibrated if flagged)    Trust score (0..100)
 
 ---
 
-## 7. System Architecture
+## 6. System Architecture
 
 The end-to-end data processing and mitigation lifecycle operates across seven coordinated subsystems:
 
@@ -154,7 +154,7 @@ flowchart TD
 
 ---
 
-## 8. Technology Stack
+## 7. Technology Stack
 
 | Layer | Component | Version | Operational Role |
 | :--- | :--- | :--- | :--- |
@@ -173,11 +173,11 @@ flowchart TD
 | **Testing** | pytest | 9.1.1 | Automated unit, regression, security, and integration suites |
 | | Typeguard | 4.6.0 | Runtime type validation for security-critical functions |
 
-*(Note: Third-party component licensing terms, copyrights, and notices are detailed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and summarized in [Section 19: Licensing and Intellectual Property](#19-licensing-and-intellectual-property).)*
+*(Note: Third-party component licensing terms, copyrights, and notices are detailed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and summarized in [Section 18: Licensing and Intellectual Property](#18-licensing-and-intellectual-property).)*
 
 ---
 
-## 9. AI/ML Detection Workflow
+## 8. AI/ML Detection Workflow
 
 The gateway computes rolling 1-second statistical feature windows from normalized ingress telemetry.
 
@@ -215,7 +215,7 @@ The `HybridDetector` engine in `backend/aegis_gateway/detection.py` combines det
 
 ---
 
-## 10. DDoS Simulation & Offline Trace Methodology
+## 9. DDoS Simulation & Offline Trace Methodology
 
 The project incorporates both in-process synthetic telemetry generation for real-time console demonstration and offline discrete-event/mote simulation tools for research dataset generation.
 
@@ -251,7 +251,7 @@ In addition to the in-process scenario generator, the project utilizes external 
 
 ---
 
-## 11. Dashboard Screenshots
+## 10. Dashboard Screenshots
 
 The industrial Matte Graphite dashboard provides comprehensive operational visibility without external CDN dependencies. (The primary operations console view is showcased above in [Section 2: Dashboard Preview](#2-dashboard-preview)).
 
@@ -273,7 +273,7 @@ The industrial Matte Graphite dashboard provides comprehensive operational visib
 
 ---
 
-## 12. Installation and Setup
+## 11. Installation and Setup
 
 ### Tested Environment
 - **Operating System:** Linux (tested on Kali Linux x86_64)
@@ -307,7 +307,7 @@ pip install -r requirements-dev.txt
 
 ---
 
-## 13. Running the Application
+## 12. Running the Application
 
 ### Development / Demonstration Mode (Default)
 By default, the gateway operates in development mode (`AEGIS_PRODUCTION=0`) with demonstration accounts enabled for local evaluation:
@@ -374,7 +374,7 @@ python3 backend/app.py
 
 ---
 
-## 14. Testing and Verification
+## 13. Testing and Verification
 
 The repository includes a comprehensive automated regression suite verifying security controls, cryptographic token caching, API boundary enforcement, ML model inference, and dpkt PCAP parsing.
 
@@ -403,7 +403,7 @@ pytest backend/tests/test_wave1_security_hardening.py
 
 ---
 
-## 15. Repository Structure
+## 14. Repository Structure
 
 The selected canonical project structure reflects active repository components and root compatibility symlinks:
 
@@ -466,7 +466,7 @@ AI-Based-Cyber-Security-Gateway-AICG/
 
 ---
 
-## 16. Security and Limitations
+## 15. Security and Limitations
 
 ### Security Architecture Disclosures
 1. **Simulated Multi-Factor Authentication (MFA)**:
@@ -485,7 +485,7 @@ AI-Based-Cyber-Security-Gateway-AICG/
 
 ---
 
-## 17. Roadmap
+## 16. Roadmap
 
 - [ ] **GitHub Actions CI**: Automatically execute the regression test suite on pushes and pull requests.
 - [ ] **eBPF / XDP Data-Plane In-Kernel Acceleration**: Implement eBPF/XDP bypass filters to drop volumetric floods directly in network drivers before socket traversal.
@@ -496,7 +496,7 @@ AI-Based-Cyber-Security-Gateway-AICG/
 
 ---
 
-## 18. Contributors and Acknowledgements
+## 17. Contributors and Acknowledgements
 
 Developed as an advanced cybersecurity engineering platform for resilient Industry 4.0 edge automation.
 
@@ -510,7 +510,7 @@ Special thanks to:
 
 ---
 
-## 19. Licensing and Intellectual Property
+## 18. Licensing and Intellectual Property
 
 **Copyright (c) 2026 JAYDEEP JOTIRAM MULIK**
 
