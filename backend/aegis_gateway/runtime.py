@@ -16,7 +16,7 @@ from .iam import IAMService
 from .policy import ResponseEngine
 from .scenarios import CATALOGUE, generate_window
 from .schema import TelemetryEvent
-from .storage import GatewayStore
+from .storage import GatewayStore, create_gateway_store
 
 
 @dataclass
@@ -36,14 +36,7 @@ class GatewayRuntime:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or Settings()
         self.settings.ensure_directories()
-        self.store = GatewayStore(
-            self.settings.database_path,
-            master_key=self.settings.device_master_key,
-            production=self.settings.production,
-            allow_demo_accounts=self.settings.allow_demo_accounts,
-            initial_admin_username=self.settings.initial_admin_username,
-            initial_admin_password=self.settings.initial_admin_password,
-        )
+        self.store = create_gateway_store(self.settings)
         self.detector = HybridDetector(self.settings.model_path)
         self.energy = EnergyModel()
         self.iam = IAMService(storage=self.store, master_key=self.settings.device_master_key)
@@ -673,11 +666,13 @@ class GatewayRuntime:
             self.publish("alert", alert)
         return {"action": stored, "incident": incident, "alert": alert}
 
-    def start_baseline(self, tick_seconds: float | None = None) -> None:
-        """Continuously generate legitimate baseline OT traffic windows when no attack simulation is active."""
+    def start_baseline(self, tick_seconds: float | None = None) -> bool:
+        """Continuously generate legitimate baseline OT traffic windows when enabled."""
+        if not self.settings.baseline_enabled:
+            return False
         with self._lock:
             if hasattr(self, "_baseline_thread") and self._baseline_thread and self._baseline_thread.is_alive():
-                return
+                return False
             self._baseline_stop = threading.Event()
             interval = tick_seconds or self.settings.demo_tick_seconds
 
@@ -704,19 +699,32 @@ class GatewayRuntime:
 
             self._baseline_thread = threading.Thread(target=run, name="aegis-live-baseline", daemon=True)
             self._baseline_thread.start()
+            return True
 
-    def stop_baseline(self) -> None:
-        """Stop the background baseline telemetry generator."""
+    def stop_baseline(self, timeout: float = 3.0) -> bool:
+        """Stop the background baseline telemetry generator.
+
+        Returns True if the worker is terminated or did not exist.
+        Returns False if the worker remains alive after timeout.
+        """
         with self._lock:
             stop_evt = getattr(self, "_baseline_stop", None)
             thread = getattr(self, "_baseline_thread", None)
             if stop_evt:
                 stop_evt.set()
-        if thread and thread.is_alive() and thread != threading.current_thread():
-            thread.join(timeout=3.0)
+
+        if thread is None:
+            return True
+
+        if thread != threading.current_thread() and thread.is_alive():
+            thread.join(timeout=timeout)
+
         with self._lock:
+            if thread.is_alive():
+                return False
             self._baseline_thread = None
             self._baseline_stop = None
+            return True
 
     def status(self) -> dict[str, Any]:
         latest = self.store.telemetry(limit=1)

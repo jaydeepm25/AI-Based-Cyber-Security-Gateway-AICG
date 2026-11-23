@@ -391,6 +391,7 @@ def test_sec03_production_enables_secure_cookie_by_default(monkeypatch):
     monkeypatch.setenv("AEGIS_PRODUCTION", "true")
     monkeypatch.setenv("AEGIS_SECRET_KEY", "prod-secret-key-for-test-32bytes!")
     monkeypatch.setenv("AEGIS_MASTER_KEY", "prod-master-key-for-test-32bytes!")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/test_db")
 
     settings = Settings()
     assert settings.production is True

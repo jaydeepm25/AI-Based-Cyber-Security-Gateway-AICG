@@ -9,7 +9,7 @@ from aegis_gateway.config import (
 )
 from aegis_gateway.runtime import GatewayRuntime
 from aegis_gateway.security import hash_password, verify_password
-from aegis_gateway.storage import GatewayStore
+from aegis_gateway.storage import GatewayStore, SQLiteGatewayStore
 
 
 def test_production_startup_missing_secret_key():
@@ -19,6 +19,7 @@ def test_production_startup_missing_secret_key():
             production=True,
             secret_key=LAB_SECRET_KEY_FALLBACK,
             device_master_key="prod-master-key-xyz-987654321",
+            database_url="postgresql://user:pass@localhost:5432/test_db",
         )
 
 
@@ -29,39 +30,34 @@ def test_production_startup_missing_device_master_key():
             production=True,
             secret_key="prod-secret-key-xyz-123456789",
             device_master_key=LAB_MASTER_KEY_FALLBACK,
+            database_url="postgresql://user:pass@localhost:5432/test_db",
         )
 
 
 def test_production_startup_without_admin_credentials_on_fresh_db(tmp_path):
     """Verify production first-run bootstrap fails fast when administrator password is not set."""
     db_path = tmp_path / "prod_unbootstrapped.sqlite3"
-    settings = Settings(
-        production=True,
-        secret_key="prod-secret-key-xyz-123456789",
-        device_master_key="prod-master-key-xyz-987654321",
-        database_path=db_path,
-        initial_admin_password=None,
-    )
     with pytest.raises(RuntimeError, match="AEGIS_INITIAL_ADMIN_PASSWORD is required"):
-        GatewayRuntime(settings)
+        SQLiteGatewayStore(
+            path=db_path,
+            production=True,
+            initial_admin_password=None,
+        )
 
 
 def test_production_startup_with_valid_bootstrap(tmp_path):
     """Verify production first-run bootstraps custom admin securely and creates no demo accounts."""
     db_path = tmp_path / "prod_bootstrapped.sqlite3"
     admin_pw = "EnterpriseSecureP@ssw0rd2026!"
-    settings = Settings(
+    store = SQLiteGatewayStore(
+        path=db_path,
         production=True,
-        secret_key="prod-secret-key-xyz-123456789",
-        device_master_key="prod-master-key-xyz-987654321",
-        database_path=db_path,
         initial_admin_username="enterprise_admin",
         initial_admin_password=admin_pw,
     )
-    runtime = GatewayRuntime(settings)
 
     # 1. Verify custom admin account created
-    admin_user = runtime.store.get_admin_user("enterprise_admin")
+    admin_user = store.get_admin_user("enterprise_admin")
     assert admin_user is not None
     assert admin_user["role"] == "ADMIN"
     assert admin_user["status"] == "ACTIVE"
@@ -69,21 +65,18 @@ def test_production_startup_with_valid_bootstrap(tmp_path):
     assert not verify_password("WrongPassword123!", admin_user["password_hash"])
 
     # 2. Verify demo operator account is NOT created in production
-    operator_user = runtime.store.get_admin_user("operator")
+    operator_user = store.get_admin_user("operator")
     assert operator_user is None
-    default_admin = runtime.store.get_admin_user("admin")
+    default_admin = store.get_admin_user("admin")
     assert default_admin is None
 
     # 3. Subsequent startup on the same DB succeeds even without initial_admin_password
-    settings_subsequent = Settings(
+    store_subsequent = SQLiteGatewayStore(
+        path=db_path,
         production=True,
-        secret_key="prod-secret-key-xyz-123456789",
-        device_master_key="prod-master-key-xyz-987654321",
-        database_path=db_path,
         initial_admin_password=None,
     )
-    runtime_subsequent = GatewayRuntime(settings_subsequent)
-    user_check = runtime_subsequent.store.get_admin_user("enterprise_admin")
+    user_check = store_subsequent.get_admin_user("enterprise_admin")
     assert user_check is not None
 
 
@@ -138,25 +131,22 @@ def test_password_hashing_and_verification():
 def test_rbac_behavior_with_production_bootstrapped_users(tmp_path):
     """Verify RBAC role checks continue to operate properly with production-bootstrapped accounts."""
     db_path = tmp_path / "rbac_prod.sqlite3"
-    settings = Settings(
+    store = SQLiteGatewayStore(
+        path=db_path,
         production=True,
-        secret_key="prod-secret-key-xyz-123456789",
-        device_master_key="prod-master-key-xyz-987654321",
-        database_path=db_path,
         initial_admin_username="sec_admin",
         initial_admin_password="SecureAdminPassword@2026!",
     )
-    runtime = GatewayRuntime(settings)
 
     # Admin creates an operator account dynamically via store
-    runtime.store.create_admin_user(
+    store.create_admin_user(
         username="sec_operator",
         password_hash=hash_password("SecureOperatorPassword@2026!"),
         role="OPERATOR",
     )
 
-    admin_u = runtime.store.get_admin_user("sec_admin")
-    operator_u = runtime.store.get_admin_user("sec_operator")
+    admin_u = store.get_admin_user("sec_admin")
+    operator_u = store.get_admin_user("sec_operator")
 
     assert admin_u["role"] == "ADMIN"
     assert operator_u["role"] == "OPERATOR"

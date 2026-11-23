@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, session
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 from .adapters import cooja_csv_events, ns3_csv_events, pcap_events, pcap_window_events
@@ -497,6 +498,19 @@ def _format_energy_row(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def apply_proxy_fix(flask_app: Flask) -> Flask:
+    """Wrap Flask WSGI application with Werkzeug ProxyFix middleware exactly once."""
+    if not isinstance(flask_app.wsgi_app, ProxyFix):
+        flask_app.wsgi_app = ProxyFix(
+            flask_app.wsgi_app,
+            x_for=1,
+            x_proto=1,
+            x_host=0,
+            x_port=0,
+        )
+    return flask_app
+
+
 def create_app(runtime: GatewayRuntime) -> Flask:
     backend_dir = Path(__file__).resolve().parent.parent
     project_root = backend_dir.parent
@@ -900,11 +914,14 @@ def create_app(runtime: GatewayRuntime) -> Flask:
             return jsonify({"error": f"Role must be one of {ALL_ROLES}"}), 400
         if runtime.store.get_admin_user(username):
             return jsonify({"error": "Username already exists"}), 409
-        created = runtime.store.create_admin_user(
-            username=username,
-            password_hash=hash_password(password),
-            role=role,
-        )
+        try:
+            created = runtime.store.create_admin_user(
+                username=username,
+                password_hash=hash_password(password),
+                role=role,
+            )
+        except ValueError as err:
+            return jsonify({"error": str(err)}), 409
         runtime.store.record_audit(
             username=curr_user["username"],
             role=curr_user["role"],
@@ -1348,7 +1365,8 @@ def create_app(runtime: GatewayRuntime) -> Flask:
             runtime.iam.reset_identities()
             runtime.response.reset()
             runtime.reset_streaks()
-            runtime.start_baseline()
+            if runtime.settings.baseline_enabled:
+                runtime.start_baseline()
             baseline_event = runtime.ingest(generate_window("normal", intensity=1, sequence=0))
             runtime.store.record_audit(
                 username=actor,
@@ -1922,6 +1940,7 @@ def create_app(runtime: GatewayRuntime) -> Flask:
 
 if __name__ == "__main__":
     runtime = GatewayRuntime()
-    runtime.start_baseline()
+    if runtime.settings.baseline_enabled:
+        runtime.start_baseline()
     app = create_app(runtime)
     app.run(host=runtime.settings.host, port=runtime.settings.port, debug=False, threaded=True)

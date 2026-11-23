@@ -21,6 +21,13 @@ def _bool(name: str, default: bool) -> bool:
     return default if value is None else value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _database_url_from_env() -> str | None:
+    raw = os.getenv("DATABASE_URL") or os.getenv("AEGIS_DATABASE_URL")
+    if not raw or not raw.strip():
+        return None
+    return raw.strip()
+
+
 def _model_path_from_env() -> Path:
     env_path = os.getenv("AEGIS_MODEL_PATH")
     if not env_path or not env_path.strip():
@@ -44,6 +51,10 @@ class Settings:
     root: Path = BACKEND_ROOT
     project_root: Path = PROJECT_ROOT
     database_path: Path = Path(os.getenv("AEGIS_DATABASE_PATH", str(BACKEND_ROOT / "data" / "aegis_gateway.sqlite3")))
+    database_url: str | None = field(
+        default_factory=_database_url_from_env,
+        repr=False,
+    )
     model_path: Path = field(default_factory=_model_path_from_env)
     report_dir: Path = BACKEND_ROOT / "reports"
     dataset_dir: Path = BACKEND_ROOT / "data" / "datasets"
@@ -92,8 +103,23 @@ class Settings:
     auth_rate_limit_max: int = int(os.getenv("AEGIS_AUTH_RATE_LIMIT_MAX", "10"))
     auth_rate_limit_window_seconds: int = int(os.getenv("AEGIS_AUTH_RATE_LIMIT_WINDOW", "60"))
     in_process_enforcement: bool = field(default_factory=lambda: _bool("AEGIS_IN_PROCESS_ENFORCEMENT", True))
+    baseline_enabled: bool | None = None
 
     def __post_init__(self) -> None:
+        if self.baseline_enabled is None:
+            env_val = os.getenv("AEGIS_BASELINE_ENABLED")
+            if env_val is not None:
+                computed = env_val.strip().lower() in {"1", "true", "yes", "on"}
+            else:
+                computed = not self.production
+            object.__setattr__(self, "baseline_enabled", computed)
+        elif not isinstance(self.baseline_enabled, bool):
+            object.__setattr__(
+                self,
+                "baseline_enabled",
+                str(self.baseline_enabled).strip().lower() in {"1", "true", "yes", "on"},
+            )
+
         if self.production:
             if not self.secret_key or self.is_lab_secret_key:
                 raise ValueError(
@@ -105,6 +131,28 @@ class Settings:
                     "AEGIS_MASTER_KEY (or AEGIS_DEVICE_MASTER_KEY) environment variable is required in production mode "
                     "and cannot use the default lab fallback key."
                 )
+            if not self.database_url or not self.database_url.strip():
+                raise ValueError(
+                    "DATABASE_URL (or AEGIS_DATABASE_URL) environment variable is required in production mode "
+                    "and cannot be empty. Production cannot fall back to SQLite."
+                )
+            raw_url = self.database_url.strip().lower()
+            if not (raw_url.startswith("postgresql://") or raw_url.startswith("postgres://")):
+                raise ValueError(
+                    "Production database connection requires a valid PostgreSQL URL scheme "
+                    "('postgresql://' or 'postgres://'). SQLite and other database engines are rejected in production."
+                )
+            if "sslmode" not in raw_url:
+                if not any(h in raw_url for h in ("localhost", "127.0.0.1", "test")):
+                    raise ValueError(
+                        "PostgreSQL connection in production mode requires an explicit sslmode "
+                        "(e.g., '?sslmode=require') for secure cloud database transit."
+                    )
+
+    @property
+    def is_postgres(self) -> bool:
+        """True when a PostgreSQL database URL is configured."""
+        return bool(self.database_url)
 
     @property
     def is_lab_master_key(self) -> bool:
