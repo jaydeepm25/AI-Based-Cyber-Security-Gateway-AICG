@@ -6,6 +6,28 @@
     <title>AI Edge Security Gateway • AICG Administrative Login</title>
     <link rel="stylesheet" href="/static/css/dashboard.css">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2338bdf8'%3E%3Cpath d='M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z'/%3E%3C/svg%3E">
+    <style>
+        .btn-quick-fill-action {
+            margin-top: 6px;
+            padding: 4px 8px;
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--cyan, #38bdf8);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: var(--radius-sm, 4px);
+            font-family: var(--font-sans);
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+            width: 100%;
+            transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+        .btn-quick-fill-action:hover {
+            background: rgba(56, 189, 248, 0.22);
+            border-color: rgba(56, 189, 248, 0.6);
+            color: #ffffff;
+        }
+    </style>
 </head>
 <body>
 
@@ -82,20 +104,29 @@
                         <span class="tag" style="color:var(--text-muted); border-color:var(--border-subtle);">LOCAL LAB</span>
                     </div>
                     <div class="auth-persona-grid helper-buttons">
-                        <button type="button" class="auth-persona-tile btn-quick-fill" id="btnQuickAdmin" onclick="quickFill('admin', 'Admin@AICG2026!')" title="Load Administrator Credentials">
+                        <!-- Card 1: Administrator (No password displayed, no quick fill) -->
+                        <div class="auth-persona-tile" id="cardAdmin" style="cursor: default;" title="Administrator Account">
                             <div class="auth-persona-top">
                                 <span class="auth-persona-name qf-role">Administrator</span>
                                 <span class="auth-persona-tag admin">ADMIN</span>
                             </div>
-                            <div class="auth-persona-creds qf-creds">admin / Admin@AICG2026!</div>
-                        </button>
-                        <button type="button" class="auth-persona-tile btn-quick-fill" id="btnQuickOperator" onclick="quickFill('operator', 'Operator@AICG2026!')" title="Load Operator Credentials">
+                            <div class="auth-persona-creds qf-creds">Username: admin</div>
+                            <div class="auth-persona-creds qf-creds" style="color: var(--text-dim); font-size: 9.5px;">Password: [Protected]</div>
+                            <div style="font-size: 9px; color: var(--text-dim); margin-top: auto; padding-top: 4px;">Manual credential entry</div>
+                        </div>
+
+                        <!-- Card 2: Operator (operator1 / Operator@AICG2026! with Quick Fill) -->
+                        <div class="auth-persona-tile" id="cardOperator" style="cursor: default;" title="Demonstration Operator Account">
                             <div class="auth-persona-top">
                                 <span class="auth-persona-name qf-role">Operator</span>
                                 <span class="auth-persona-tag operator">OPERATOR</span>
                             </div>
-                            <div class="auth-persona-creds qf-creds">operator / Operator@AICG2026!</div>
-                        </button>
+                            <div class="auth-persona-creds qf-creds">Username: operator1</div>
+                            <div class="auth-persona-creds qf-creds">Password: Operator@AICG2026!</div>
+                            <button type="button" class="btn-quick-fill-action" id="btnQuickOperator" onclick="quickFillOperator()" title="Quick Fill Operator Credentials">
+                                Quick Fill
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -111,19 +142,21 @@
 </div>
 
 <script>
-function quickFill(user, pass) {
-    document.getElementById("username").value = user;
-    document.getElementById("password").value = pass;
-    const mfaBox = document.getElementById("mfaContainer");
-    if (mfaBox) {
-        mfaBox.style.display = "block";
-        mfaBox.classList.add("is-active");
-    }
-    document.getElementById("mfaCode").value = "123456";
+function quickFillOperator() {
+    document.getElementById("username").value = "operator1";
+    document.getElementById("password").value = "Operator@AICG2026!";
     const msg = document.getElementById("loginStatusMsg");
-    msg.className = "auth-status-box success login-msg-box";
-    msg.textContent = `Loaded demonstration credentials for role: ${user.toUpperCase()}`;
-    msg.style.display = "block";
+    if (msg) {
+        msg.className = "auth-status-box success login-msg-box";
+        msg.textContent = "Populated Operator demonstration credentials (operator1). Click 'Authenticate Gateway Session' to proceed.";
+        msg.style.display = "block";
+    }
+}
+
+function quickFill(user, pass) {
+    if (user === "operator" || user === "operator1") {
+        quickFillOperator();
+    }
 }
 
 async function handleLoginSubmit(event) {
