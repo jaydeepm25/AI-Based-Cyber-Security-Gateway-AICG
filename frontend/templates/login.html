@@ -153,12 +153,6 @@ function quickFillOperator() {
     }
 }
 
-function quickFill(user, pass) {
-    if (user === "operator" || user === "operator1") {
-        quickFillOperator();
-    }
-}
-
 async function handleLoginSubmit(event) {
     event.preventDefault();
     const submitBtn = document.getElementById("loginSubmitBtn");
