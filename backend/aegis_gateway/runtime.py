@@ -701,7 +701,7 @@ class GatewayRuntime:
             self._baseline_thread.start()
             return True
 
-    def stop_baseline(self, timeout: float = 3.0) -> bool:
+    def stop_baseline(self, timeout: float = 5.0) -> bool:
         """Stop the background baseline telemetry generator.
 
         Returns True if the worker is terminated or did not exist.

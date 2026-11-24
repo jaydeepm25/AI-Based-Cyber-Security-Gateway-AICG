@@ -2364,12 +2364,23 @@ window.transitionIncidentState = async function(incidentId, targetState) {
    13. MASTER REFRESH & SSE INTEGRATION
    ========================================================================== */
 async function refreshDashboard() {
+    if (isRefreshInFlight) {
+        refreshPending = true;
+        return;
+    }
+    isRefreshInFlight = true;
     try {
-        // 1. Status & Summary
+        // 1. Fetch core real-time endpoints in parallel
+        const [statusRes, liveRes, incRes, energyRes] = await Promise.allSettled([
+            fetch("/api/status", { cache: "no-store" }),
+            fetch("/api/telemetry", { cache: "no-store" }),
+            fetch("/api/incidents", { cache: "no-store" }),
+            fetch("/api/energy", { cache: "no-store" }),
+        ]);
+
         let statusObj = null;
-        const statusRes = await fetch("/api/status", { cache: "no-store" });
-        if (statusRes.ok) {
-            statusObj = await statusRes.json();
+        if (statusRes.status === "fulfilled" && statusRes.value.ok) {
+            statusObj = await statusRes.value.json();
             const sysStatus = document.getElementById("systemStatus");
             const dot = document.getElementById("statusDot");
             const isOnline = statusObj.status === "ONLINE";
@@ -2381,13 +2392,12 @@ async function refreshDashboard() {
             updateSummary(statusObj.summary || {}, statusObj);
         }
 
-        // 2. Telemetry & Time-Series Charts
         let latestTel = null;
-        const liveRes = await fetch("/api/telemetry", { cache: "no-store" });
         let liveRows = [];
-        if (liveRes.ok) {
-            const liveData = await liveRes.json();
+        if (liveRes.status === "fulfilled" && liveRes.value.ok) {
+            const liveData = await liveRes.value.json();
             liveRows = liveData.rows || [];
+            window._cachedLiveRows = liveRows;
             if (liveRows.length) {
                 latestTel = liveRows[liveRows.length - 1];
                 updateDetection(latestTel);
@@ -2400,39 +2410,9 @@ async function refreshDashboard() {
             if (threatCanvas) renderThreatChart(threatCanvas, liveRows);
         }
 
-        // 3. Protocols Doughnut
-        const protoRes = await fetch("/api/protocols", { cache: "no-store" });
-        if (protoRes.ok) {
-            const protoData = await protoRes.json();
-            renderProtocolDonut(document.getElementById("protocolDonutChart"), protoData);
-        }
-
-        // 4. Energy Model
-        const energyRes = await fetch("/api/energy", { cache: "no-store" });
-        if (energyRes.ok) {
-            const energyData = await energyRes.json();
-            updateEnergy(energyData);
-        }
-
-        // 5. Topology Mimic
-        const topoRes = await fetch("/api/topology", { cache: "no-store" });
-        if (topoRes.ok) {
-            const topoData = await topoRes.json();
-            updateTopology(topoData);
-        }
-
-        // 6. IAM Dynamic Table
-        const iamRes = await fetch("/api/iam", { cache: "no-store" });
-        if (iamRes.ok) {
-            const iamData = await iamRes.json();
-            updateIAM(iamData);
-        }
-
-        // 7. Incidents Journal
         let incidentsList = [];
-        const incRes = await fetch("/api/incidents", { cache: "no-store" });
-        if (incRes.ok) {
-            const incData = await incRes.json();
+        if (incRes.status === "fulfilled" && incRes.value.ok) {
+            const incData = await incRes.value.json();
             incidentsList = incData.incidents || [];
             updateIncidents(incidentsList);
         }
@@ -2456,28 +2436,58 @@ async function refreshDashboard() {
             hmiTargetIncident = incidentsList[0];
         }
 
-        // Update the 7-Step Stepper using the canonical incident state
         updateLifecycle(stepperIncident, statusObj ? statusObj.summary : {}, latestTel ? latestTel.lifecycle_context : null);
 
-        // 8. Recent Threat Events
-        const evRes = await fetch("/api/events", { cache: "no-store" });
-        if (evRes.ok) {
-            const evData = await evRes.json();
-            updateEvents(evData.events);
+        if (energyRes.status === "fulfilled" && energyRes.value.ok) {
+            const energyData = await energyRes.value.json();
+            updateEnergy(energyData);
         }
 
-        // 9. Model Assurance & Confusion Matrix
-        const maRes = await fetch("/api/model-assurance", { cache: "no-store" });
-        if (maRes.ok) {
-            const maData = await maRes.json();
-            updateModelAssurance(maData);
-        }
+        // 2. Throttled auxiliary polls (Protocols, IAM, Topology, Events, Model Assurance, Admin)
+        const now = Date.now();
+        if (!window._lastAuxTime || (now - window._lastAuxTime) > 8000) {
+            window._lastAuxTime = now;
+            const [protoRes, iamRes, topoRes, evRes, maRes] = await Promise.allSettled([
+                fetch("/api/protocols", { cache: "no-store" }),
+                fetch("/api/iam", { cache: "no-store" }),
+                fetch("/api/topology", { cache: "no-store" }),
+                fetch("/api/events", { cache: "no-store" }),
+                window._modelAssuranceLoaded ? Promise.resolve(null) : fetch("/api/model-assurance", { cache: "no-store" }),
+            ]);
 
-        // 10. Administrative Security Layer
-        await refreshAdminSection();
+            if (protoRes.status === "fulfilled" && protoRes.value && protoRes.value.ok) {
+                const protoData = await protoRes.value.json();
+                renderProtocolDonut(document.getElementById("protocolDonutChart"), protoData);
+            }
+            if (iamRes.status === "fulfilled" && iamRes.value && iamRes.value.ok) {
+                const iamData = await iamRes.value.json();
+                updateIAM(iamData);
+            }
+            if (topoRes.status === "fulfilled" && topoRes.value && topoRes.value.ok) {
+                const topoData = await topoRes.value.json();
+                updateTopology(topoData);
+            }
+            if (evRes.status === "fulfilled" && evRes.value && evRes.value.ok) {
+                const evData = await evRes.value.json();
+                updateEvents(evData.events);
+            }
+            if (maRes.status === "fulfilled" && maRes.value && maRes.value.ok) {
+                const maData = await maRes.value.json();
+                updateModelAssurance(maData);
+                window._modelAssuranceLoaded = true;
+            }
+
+            await refreshAdminSection();
+        }
 
     } catch (error) {
         console.error("Dashboard refresh error:", error);
+    } finally {
+        isRefreshInFlight = false;
+        if (refreshPending) {
+            refreshPending = false;
+            scheduleCoalescedRefresh();
+        }
     }
 }
 
@@ -2673,7 +2683,44 @@ function initSSE() {
     if (typeof EventSource === "undefined") return;
     try {
         const source = new EventSource("/events");
-        source.addEventListener("telemetry", () => scheduleCoalescedRefresh());
+        source.addEventListener("telemetry", (e) => {
+            try {
+                if (e && e.data) {
+                    const msg = JSON.parse(e.data);
+                    if (msg && msg.event) {
+                        const evt = msg.event;
+                        if (window._cachedLiveRows) {
+                            window._cachedLiveRows.push(evt);
+                            if (window._cachedLiveRows.length > 50) {
+                                window._cachedLiveRows.shift();
+                            }
+                            renderHistorianChart(document.getElementById("trafficChart"), window._cachedLiveRows);
+                            renderEnergyChart(document.getElementById("energyChart"), window._cachedLiveRows);
+                            const threatCanvas = document.getElementById("threatChart");
+                            if (threatCanvas) renderThreatChart(threatCanvas, window._cachedLiveRows);
+                            updateDetection(evt);
+                            if (evt.explainability_context) updateExplainability(evt.explainability_context);
+                        }
+                        if (msg.decision || evt) {
+                            const isAtk = evt.label === "ATTACK";
+                            const summaryData = {
+                                latest_prediction: evt.label || "NORMAL",
+                                latest_ddos_probability: evt.confidence ?? (isAtk ? 0.99 : 0.05),
+                                latest_packet_rate: evt.packet_rate ?? 18.0,
+                                latest_bytes_per_second: evt.byte_rate ?? 4140.0,
+                                latest_security_action: evt.response_action || (isAtk ? "BLOCK" : "MONITOR"),
+                                latest_mitigation_action: evt.response_action || "NONE",
+                                trust_score: evt.trust_score ?? 100.0,
+                                active_incident: msg.incident,
+                            };
+                            updateSummary(summaryData);
+                        }
+                        return;
+                    }
+                }
+            } catch (_) {}
+            scheduleCoalescedRefresh();
+        });
         source.addEventListener("incident", (e) => {
             try {
                 if (e && e.data) {
@@ -2692,7 +2739,10 @@ function initSSE() {
         });
         source.addEventListener("response", () => scheduleCoalescedRefresh());
         source.addEventListener("trust", () => scheduleCoalescedRefresh());
-        source.addEventListener("simulation", () => scheduleCoalescedRefresh());
+        source.addEventListener("simulation", () => {
+            window._lastAuxTime = 0;
+            scheduleCoalescedRefresh();
+        });
         source.addEventListener("alert", () => {
             scheduleCoalescedRefresh();
             refreshAdminAlerts();
@@ -3315,6 +3365,6 @@ window.__refreshCoalesce = {
 initSidebarNavigation();
 checkAuthStatus();
 refreshDashboard();
-setInterval(refreshDashboard, 3500);
+setInterval(refreshDashboard, 5000);
 initSSE();
 

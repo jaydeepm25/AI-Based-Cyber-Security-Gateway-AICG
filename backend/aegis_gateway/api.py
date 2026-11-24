@@ -7,6 +7,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import time
 from typing import Any
 
 from urllib.parse import unquote, urlsplit
@@ -1359,7 +1360,7 @@ def create_app(runtime: GatewayRuntime) -> Flask:
         curr_user = get_current_user() or {"username": "admin", "role": "ADMIN"}
         actor = curr_user["username"]
         stopped = runtime.stop_simulation()
-        runtime.stop_baseline()
+        runtime.stop_baseline(timeout=5.0)
         with runtime._lock:
             runtime.store.reset_active_incidents_and_alerts(actor=actor, note="Simulation reset via dashboard/API")
             runtime.iam.reset_identities()
@@ -1546,10 +1547,16 @@ def create_app(runtime: GatewayRuntime) -> Flask:
             "claim_boundary": "Not a physical energy measurement; correlation does not prove attack."
         })
 
+    _protocols_cache: dict[str, Any] = {"ts": 0.0, "data": None}
+
     @app.get("/api/protocols")
     @login_required
     def protocols():
-        rows = runtime.store.telemetry(limit=1000)
+        now_mono = time.monotonic()
+        if _protocols_cache["data"] is not None and (now_mono - _protocols_cache["ts"]) < 2.0:
+            return jsonify(_protocols_cache["data"])
+
+        rows = runtime.store.telemetry(limit=500)
         counts: dict[str, int] = {}
         for row in rows:
             proto = str(row.get("protocol") or "UNKNOWN").upper()
@@ -1565,13 +1572,16 @@ def create_app(runtime: GatewayRuntime) -> Flask:
 
         total = sum(counts.values()) or 1
         percentages = {k: round((v / total) * 100, 1) for k, v in counts.items()}
-        return jsonify({
+        result = {
             "mix": counts,
             "total": sum(counts.values()),
             "percentages": percentages,
             "aggregation": "ICMP/ICMPv6 grouped under ICMP; port 1883 and mqtt_anomaly grouped under MQTT; port 5683/UDP under UDP.",
             "claim_boundary": "MQTT, CoAP, RPL, and Modbus scenario labels are simulated profiles unless a parsed source explicitly says otherwise."
-        })
+        }
+        _protocols_cache["ts"] = now_mono
+        _protocols_cache["data"] = result
+        return jsonify(result)
 
     @app.get("/api/topology")
     @login_required
@@ -1652,11 +1662,21 @@ def create_app(runtime: GatewayRuntime) -> Flask:
             "instruction": "Run `python3 -m aegis_gateway.cli train` to generate evaluation evidence."
         })
 
+    _model_assurance_cache: dict[str, Any] = {"mtime": 0.0, "data": None}
+
     @app.get("/api/model-assurance")
     @login_required
     def model_assurance():
         eval_path = runtime.settings.report_dir / "evaluation.json"
         cm_path = runtime.settings.report_dir / "confusion_matrix.csv"
+
+        try:
+            current_mtime = eval_path.stat().st_mtime if eval_path.exists() else 0.0
+        except OSError:
+            current_mtime = 0.0
+
+        if _model_assurance_cache["data"] is not None and _model_assurance_cache["mtime"] == current_mtime and current_mtime > 0.0:
+            return jsonify(_model_assurance_cache["data"])
 
         data: dict[str, Any] = {
             "status": "READY" if eval_path.exists() else "NOT_TRAINED",
@@ -1740,6 +1760,8 @@ def create_app(runtime: GatewayRuntime) -> Flask:
             except Exception as err:
                 data["cm_parse_error"] = str(err)
 
+        _model_assurance_cache["mtime"] = current_mtime
+        _model_assurance_cache["data"] = data
         return jsonify(data)
 
     @app.get("/api/ns3")

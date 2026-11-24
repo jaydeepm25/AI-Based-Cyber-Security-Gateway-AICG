@@ -451,6 +451,7 @@ class SQLiteGatewayStore(GatewayStore):
                 CREATE INDEX IF NOT EXISTS telemetry_timestamp_idx ON telemetry(timestamp DESC);
                 CREATE INDEX IF NOT EXISTS telemetry_scenario_idx ON telemetry(scenario_id);
                 CREATE INDEX IF NOT EXISTS telemetry_source_idx ON telemetry(source_type, source_id);
+                CREATE INDEX IF NOT EXISTS telemetry_protocol_idx ON telemetry(protocol);
                 CREATE TABLE IF NOT EXISTS incidents (
                     incident_id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                     event_id TEXT NOT NULL, device_id TEXT, source_id TEXT, attack_type TEXT,
@@ -460,6 +461,7 @@ class SQLiteGatewayStore(GatewayStore):
                     recovery_state TEXT NOT NULL, resolved_at TEXT, provenance TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS incidents_state_idx ON incidents(lifecycle_state, severity);
+                CREATE INDEX IF NOT EXISTS incidents_active_idx ON incidents(lifecycle_state, updated_at DESC);
                 CREATE TABLE IF NOT EXISTS incident_history (
                     history_id TEXT PRIMARY KEY, incident_id TEXT NOT NULL, timestamp TEXT NOT NULL,
                     previous_state TEXT, state TEXT NOT NULL, actor TEXT, note TEXT, evidence_json TEXT NOT NULL,
@@ -472,11 +474,13 @@ class SQLiteGatewayStore(GatewayStore):
                     result TEXT NOT NULL, provenance TEXT NOT NULL,
                     FOREIGN KEY (incident_id) REFERENCES incidents(incident_id) ON DELETE SET NULL
                 );
+                CREATE INDEX IF NOT EXISTS actions_timestamp_idx ON actions(timestamp DESC);
                 CREATE TABLE IF NOT EXISTS iam_events (
                     iam_event_id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, identity TEXT, role TEXT,
                     authentication_status TEXT, authorization_status TEXT, access_request TEXT,
                     decision TEXT, reason TEXT, provenance TEXT NOT NULL
                 );
+                CREATE INDEX IF NOT EXISTS iam_timestamp_idx ON iam_events(timestamp DESC);
                 CREATE TABLE IF NOT EXISTS trust_history (
                     trust_event_id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, identity TEXT NOT NULL,
                     score REAL NOT NULL, delta REAL NOT NULL, reason TEXT NOT NULL, provenance TEXT NOT NULL
@@ -1435,8 +1439,10 @@ class PostgresGatewayStore(GatewayStore):
             raw_json TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS telemetry_timestamp_idx ON telemetry(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS telemetry_timestamp_seq_idx ON telemetry(timestamp DESC, seq_id DESC);
         CREATE INDEX IF NOT EXISTS telemetry_scenario_idx ON telemetry(scenario_id);
         CREATE INDEX IF NOT EXISTS telemetry_source_idx ON telemetry(source_type, source_id);
+        CREATE INDEX IF NOT EXISTS telemetry_protocol_idx ON telemetry(protocol);
 
         CREATE TABLE IF NOT EXISTS incidents (
             incident_id TEXT PRIMARY KEY,
@@ -1462,6 +1468,7 @@ class PostgresGatewayStore(GatewayStore):
             provenance TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS incidents_state_idx ON incidents(lifecycle_state, severity);
+        CREATE INDEX IF NOT EXISTS incidents_active_idx ON incidents(lifecycle_state, updated_at DESC);
 
         CREATE TABLE IF NOT EXISTS incident_history (
             history_id TEXT PRIMARY KEY,
@@ -1487,6 +1494,7 @@ class PostgresGatewayStore(GatewayStore):
             result TEXT NOT NULL,
             provenance TEXT NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS actions_timestamp_idx ON actions(timestamp DESC);
 
         CREATE TABLE IF NOT EXISTS iam_events (
             iam_event_id TEXT PRIMARY KEY,
@@ -1500,6 +1508,7 @@ class PostgresGatewayStore(GatewayStore):
             reason TEXT,
             provenance TEXT NOT NULL
         );
+        CREATE INDEX IF NOT EXISTS iam_timestamp_idx ON iam_events(timestamp DESC);
 
         CREATE TABLE IF NOT EXISTS trust_history (
             seq_id BIGSERIAL UNIQUE,

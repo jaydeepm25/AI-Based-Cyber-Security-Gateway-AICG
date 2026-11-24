@@ -254,6 +254,8 @@ def test_production_application_import_does_not_start_baseline_thread():
     """Verify importing backend.app in production mode does not start the background baseline worker."""
     code = (
         "import os\n"
+        "import sys\n"
+        "sys.path.extend(['.', '..', 'backend'])\n"
         "import unittest.mock\n"
         "os.environ['AEGIS_PRODUCTION'] = 'true'\n"
         "os.environ['AEGIS_SECRET_KEY'] = 'secure-test-production-secret-key-at-least-64-bytes-entropy-required'\n"
@@ -320,8 +322,13 @@ def test_manual_ddos_simulations_produce_telemetry_when_baseline_disabled(tmp_pa
     # 2. Test manual UDP flood
     udp_sim = runtime.start_simulation("udp_flood", intensity=3, duration=0.2)
     assert udp_sim["state"] == "RUNNING"
-    time.sleep(0.3)
-    udp_rows = runtime.store.telemetry()
+    deadline = time.monotonic() + 3.0
+    udp_rows = []
+    while time.monotonic() < deadline:
+        udp_rows = runtime.store.telemetry()
+        if any(r.get("attack_type") == "udp_flood" for r in udp_rows):
+            break
+        time.sleep(0.05)
     assert len(udp_rows) > 0
     assert any(r["attack_type"] == "udp_flood" for r in udp_rows)
     assert any(r["label"] == "ATTACK" for r in udp_rows)
@@ -332,8 +339,13 @@ def test_manual_ddos_simulations_produce_telemetry_when_baseline_disabled(tmp_pa
     initial_count = len(runtime.store.telemetry())
     syn_sim = runtime.start_simulation("syn_flood", intensity=3, duration=0.2)
     assert syn_sim["state"] == "RUNNING"
-    time.sleep(0.3)
-    syn_rows = runtime.store.telemetry()
+    deadline = time.monotonic() + 3.0
+    syn_rows = []
+    while time.monotonic() < deadline:
+        syn_rows = runtime.store.telemetry()
+        if any(r.get("attack_type") == "syn_flood" for r in syn_rows):
+            break
+        time.sleep(0.05)
     assert len(syn_rows) > initial_count
     assert any(r["attack_type"] == "syn_flood" for r in syn_rows)
     assert getattr(runtime, "_baseline_thread", None) is None
@@ -342,8 +354,13 @@ def test_manual_ddos_simulations_produce_telemetry_when_baseline_disabled(tmp_pa
     initial_count_2 = len(runtime.store.telemetry())
     icmp_sim = runtime.start_simulation("icmp_flood", intensity=3, duration=0.2)
     assert icmp_sim["state"] == "RUNNING"
-    time.sleep(0.3)
-    icmp_rows = runtime.store.telemetry()
+    deadline = time.monotonic() + 3.0
+    icmp_rows = []
+    while time.monotonic() < deadline:
+        icmp_rows = runtime.store.telemetry()
+        if any(r.get("attack_type") == "icmp_flood" for r in icmp_rows):
+            break
+        time.sleep(0.05)
     assert len(icmp_rows) > initial_count_2
     assert any(r["attack_type"] == "icmp_flood" for r in icmp_rows)
     assert getattr(runtime, "_baseline_thread", None) is None
@@ -356,9 +373,14 @@ def test_existing_baseline_and_recovery_tests_work_with_explicit_configuration(t
 
     started = runtime.start_baseline(tick_seconds=0.05)
     assert started is True
-    time.sleep(0.2)
+    deadline = time.monotonic() + 3.0
+    rows = []
+    while time.monotonic() < deadline:
+        rows = runtime.store.telemetry()
+        if rows:
+            break
+        time.sleep(0.05)
 
-    rows = runtime.store.telemetry()
     assert len(rows) > 0
     assert all(r["traffic_type"] == "NORMAL" for r in rows)
 
