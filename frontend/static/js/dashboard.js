@@ -118,8 +118,14 @@ function updateSummary(summary, fullStatus) {
     // Security Status Banner
     updateStatusBanner(pred, ddosProb, summary);
 
-    // Circular Percentage Gauges
-    updateCircularGauges(ddosProb, trustScore);
+    // Circular Percentage Gauges: Threat Gauge uses Platt-calibrated attack probability; Trust Posture uses IAM trust
+    if (summary.calibrated_probability !== undefined) {
+        window._lastCalibratedProb = (typeof summary.calibrated_probability === "number" && !isNaN(summary.calibrated_probability))
+            ? summary.calibrated_probability
+            : null;
+    }
+    const calProb = window._lastCalibratedProb ?? null;
+    updateCircularGauges(calProb, trustScore);
 }
 
 function updateStatusBanner(prediction, ddosProb, summary) {
@@ -185,23 +191,30 @@ function updateStatusBanner(prediction, ddosProb, summary) {
 function updateCircularGauges(threatProb, trustScore) {
     const circumference = 213.62;
 
-    // 1. AI Threat Confidence Gauge
+    // 1. AI Threat Confidence Gauge (Platt-calibrated attack probability)
     const threatCircle = document.getElementById("aiThreatGaugeCircle");
     const threatText = document.getElementById("aiThreatGaugeText");
     if (threatCircle && threatText) {
-        const clampedThreat = Math.min(1, Math.max(0, threatProb));
-        const offset = circumference - (circumference * clampedThreat);
-        threatCircle.style.strokeDashoffset = offset;
-        threatText.textContent = `${(clampedThreat * 100).toFixed(0)}%`;
-        if (clampedThreat > 0.6) {
-            threatCircle.setAttribute("class", "gauge-progress gauge-threat-progress high");
-            threatText.style.color = "var(--red)";
-        } else if (clampedThreat > 0.25) {
-            threatCircle.setAttribute("class", "gauge-progress gauge-threat-progress mid");
-            threatText.style.color = "var(--amber)";
-        } else {
+        if (threatProb === null || threatProb === undefined || isNaN(threatProb)) {
+            threatCircle.style.strokeDashoffset = circumference;
             threatCircle.setAttribute("class", "gauge-progress gauge-threat-progress");
-            threatText.style.color = "var(--cyan)";
+            threatText.textContent = "—";
+            threatText.style.color = "var(--text-muted)";
+        } else {
+            const clampedThreat = Math.min(1, Math.max(0, threatProb));
+            const offset = circumference - (circumference * clampedThreat);
+            threatCircle.style.strokeDashoffset = offset;
+            threatText.textContent = `${(clampedThreat * 100).toFixed(0)}%`;
+            if (clampedThreat > 0.6) {
+                threatCircle.setAttribute("class", "gauge-progress gauge-threat-progress high");
+                threatText.style.color = "var(--red)";
+            } else if (clampedThreat > 0.25) {
+                threatCircle.setAttribute("class", "gauge-progress gauge-threat-progress mid");
+                threatText.style.color = "var(--amber)";
+            } else {
+                threatCircle.setAttribute("class", "gauge-progress gauge-threat-progress");
+                threatText.style.color = "var(--cyan)";
+            }
         }
     }
 
@@ -2703,9 +2716,20 @@ function initSSE() {
                         }
                         if (msg.decision || evt) {
                             const isAtk = evt.label === "ATTACK";
+                            const decision = msg.decision || {};
+                            const fusedRisk = typeof decision.score === "number"
+                                ? decision.score
+                                : (typeof evt.ddos_probability === "number"
+                                    ? evt.ddos_probability
+                                    : (isAtk ? 0.99 : 0.05));
+                            const calProb = (typeof decision.calibrated_probability === "number" && !isNaN(decision.calibrated_probability))
+                                ? decision.calibrated_probability
+                                : (typeof evt.calibrated_probability === "number" && !isNaN(evt.calibrated_probability) ? evt.calibrated_probability : null);
+
                             const summaryData = {
                                 latest_prediction: evt.label || "NORMAL",
-                                latest_ddos_probability: evt.confidence ?? (isAtk ? 0.99 : 0.05),
+                                latest_ddos_probability: fusedRisk,
+                                calibrated_probability: calProb,
                                 latest_packet_rate: evt.packet_rate ?? 18.0,
                                 latest_bytes_per_second: evt.byte_rate ?? 4140.0,
                                 latest_security_action: evt.response_action || (isAtk ? "BLOCK" : "MONITOR"),
