@@ -7,6 +7,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import threading
 import time
 from typing import Any
 
@@ -47,10 +48,13 @@ from .security import (
     roles_required,
     rotate_session,
     set_pre_mfa_user,
+    validate_password_policy,
     verify_password,
     verify_simulated_mfa,
     _log_security_audit,
 )
+
+_user_mutation_lock = threading.Lock()
 
 
 def _number(value: Any, default: int = 3) -> int:
@@ -542,7 +546,8 @@ def create_app(runtime: GatewayRuntime) -> Flask:
 
     @app.get("/login")
     def login_page():
-        if get_current_user():
+        user = get_current_user()
+        if user and not user.get("must_change_password"):
             return redirect(sanitize_redirect_url(request.args.get("next")))
         return render_template("login.html")
 
@@ -646,6 +651,7 @@ def create_app(runtime: GatewayRuntime) -> Flask:
         clear_pre_mfa()
         rotate_session()
         session.permanent = True
+        must_change = bool(user.get("must_change_password", False))
         user_session = {
             "user_id": user["user_id"],
             "username": user["username"],
@@ -654,6 +660,7 @@ def create_app(runtime: GatewayRuntime) -> Flask:
             "mfa_verified": True,
             "mfa_status": "SIMULATED_VERIFIED",
             "login_time": utc_now(),
+            "must_change_password": must_change,
         }
         session["user"] = user_session
         runtime.store.record_admin_login(user["username"])
@@ -668,13 +675,15 @@ def create_app(runtime: GatewayRuntime) -> Flask:
             source_ip=request.remote_addr,
         )
 
-        target_next = sanitize_redirect_url(request.args.get("next") or (data.get("next") if isinstance(data, dict) else None))
+        perms = [] if must_change else sorted(list(ROLE_PERMISSIONS.get(user["role"], set())))
+        target_next = "/change-password" if must_change else sanitize_redirect_url(request.args.get("next") or (data.get("next") if isinstance(data, dict) else None))
         if request.is_json or request.path.startswith("/api/"):
             return jsonify({
                 "ok": True,
                 "authenticated": True,
+                "must_change_password": must_change,
                 "user": user_session,
-                "permissions": sorted(list(ROLE_PERMISSIONS.get(user["role"], set()))),
+                "permissions": perms,
                 "redirect": target_next
             })
         return redirect(target_next)
@@ -683,7 +692,7 @@ def create_app(runtime: GatewayRuntime) -> Flask:
     def verify_mfa_endpoint():
         data = request.get_json(silent=True) or request.form.to_dict() or {}
         username = str(data.get("username", "")).strip()
-        mfa_code = str(data.get("mfa_code", ""))
+        mfa_code = str(data.get("mfa_code") or data.get("code") or "")
 
         # Enforce Stage 1 pre-MFA requirement: must have passed primary password verification
         pre_user = get_pre_mfa_user()
@@ -735,6 +744,7 @@ def create_app(runtime: GatewayRuntime) -> Flask:
         clear_pre_mfa()
         rotate_session()
         session.permanent = True
+        must_change = bool(user.get("must_change_password", False))
         user_session = {
             "user_id": user["user_id"],
             "username": user["username"],
@@ -743,6 +753,7 @@ def create_app(runtime: GatewayRuntime) -> Flask:
             "mfa_verified": True,
             "mfa_status": "SIMULATED_VERIFIED",
             "login_time": utc_now(),
+            "must_change_password": must_change,
         }
         session["user"] = user_session
         runtime.store.record_admin_login(user["username"])
@@ -756,12 +767,15 @@ def create_app(runtime: GatewayRuntime) -> Flask:
             details="Authenticated gateway administrative session via simulated MFA",
             source_ip=request.remote_addr,
         )
+        perms = [] if must_change else sorted(list(ROLE_PERMISSIONS.get(user["role"], set())))
+        target_next = "/change-password" if must_change else sanitize_redirect_url(data.get("next") or request.args.get("next") or "/")
         return jsonify({
             "ok": True,
             "authenticated": True,
+            "must_change_password": must_change,
             "user": user_session,
-            "permissions": sorted(list(ROLE_PERMISSIONS.get(user["role"], set()))),
-            "redirect": sanitize_redirect_url(data.get("next") or request.args.get("next") or "/")
+            "permissions": perms,
+            "redirect": target_next
         })
 
     @app.get("/api/auth/status")
@@ -775,15 +789,99 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                 "environment": "CONTROLLED_LAB",
                 "scope": "LOCAL LAB IDENTITY / SIMULATED MFA / DRY_RUN"
             })
-        perms = list(ROLE_PERMISSIONS.get(user.get("role", ""), set()))
+        must_change = bool(user.get("must_change_password", False))
+        perms = [] if must_change else sorted(list(ROLE_PERMISSIONS.get(user.get("role", ""), set())))
         return jsonify({
             "authenticated": True,
             "user": user,
             "role": user.get("role", ""),
-            "permissions": sorted(perms),
+            "must_change_password": must_change,
+            "permissions": perms,
             "environment": "CONTROLLED_LAB",
             "scope": "LOCAL LAB IDENTITY / SIMULATED MFA / DRY_RUN"
         })
+
+    @app.post("/api/auth/change-password")
+    @login_required
+    def change_password_endpoint():
+        curr_user = get_current_user()
+        if not curr_user:
+            return jsonify({"error": "Authentication required", "code": "AUTH_REQUIRED"}), 401
+
+        data = request.get_json(silent=True) or request.form.to_dict() or {}
+        current_password = str(data.get("current_password", ""))
+        new_password = str(data.get("new_password", ""))
+
+        if not current_password or not new_password:
+            return jsonify({"error": "Current password and new password are required", "code": "MISSING_FIELDS"}), 400
+
+        user_id = curr_user.get("user_id")
+        user = runtime.store.get_admin_user_by_id(user_id) if user_id else None
+        if not user:
+            user = runtime.store.get_admin_user(curr_user.get("username", ""))
+        if not user:
+            return jsonify({"error": "User record not found", "code": "USER_NOT_FOUND"}), 404
+
+        if not verify_password(current_password, user["password_hash"]):
+            runtime.store.record_audit(
+                username=user["username"],
+                role=user["role"],
+                action="PASSWORD_CHANGE_FAILURE",
+                resource="user",
+                resource_id=user["user_id"],
+                result="FAILURE",
+                details=f"Failed password change attempt for user '{user['username']}': invalid current password",
+                source_ip=request.remote_addr,
+            )
+            return jsonify({"error": "Current password is incorrect", "code": "INVALID_CURRENT_PASSWORD"}), 400
+
+        is_valid, err_msg = validate_password_policy(new_password)
+        if not is_valid:
+            return jsonify({"error": err_msg, "code": "PASSWORD_POLICY_VIOLATION"}), 400
+
+        if current_password == new_password:
+            return jsonify({
+                "error": "New password cannot be the same as current password",
+                "code": "PASSWORD_REUSED"
+            }), 400
+
+        new_hash = hash_password(new_password)
+        runtime.store.update_admin_user_password(user["user_id"], new_hash, must_change_password=False)
+
+        runtime.store.record_audit(
+            username=user["username"],
+            role=user["role"],
+            action="USER_PASSWORD_CHANGED",
+            resource="user",
+            resource_id=user["user_id"],
+            result="SUCCESS",
+            details=f"User '{user['username']}' successfully changed their password",
+            source_ip=request.remote_addr,
+        )
+
+        rotate_session()
+        session.permanent = True
+        user_session = {
+            "user_id": user["user_id"],
+            "username": user["username"],
+            "role": user["role"],
+            "authenticated": True,
+            "mfa_verified": True,
+            "mfa_status": "SIMULATED_VERIFIED",
+            "login_time": utc_now(),
+            "must_change_password": False,
+        }
+        session["user"] = user_session
+
+        return jsonify({
+            "ok": True,
+            "message": "Password changed successfully",
+            "authenticated": True,
+            "must_change_password": False,
+            "user": user_session,
+            "permissions": sorted(list(ROLE_PERMISSIONS.get(user["role"], set()))),
+            "redirect": "/"
+        }), 200
 
     @app.route("/logout", methods=["POST"])
     @app.route("/api/auth/logout", methods=["POST"])
@@ -909,10 +1007,14 @@ def create_app(runtime: GatewayRuntime) -> Flask:
         username = str(body.get("username", "")).strip()
         password = str(body.get("password", ""))
         role = str(body.get("role", "OPERATOR")).upper()
+        must_change = bool(body.get("must_change_password", False))
         if not username or not password:
             return jsonify({"error": "Username and password are required"}), 400
         if role not in ALL_ROLES:
             return jsonify({"error": f"Role must be one of {ALL_ROLES}"}), 400
+        valid_pw, pw_err = validate_password_policy(password)
+        if not valid_pw:
+            return jsonify({"error": pw_err}), 400
         if runtime.store.get_admin_user(username):
             return jsonify({"error": "Username already exists"}), 409
         try:
@@ -920,6 +1022,7 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                 username=username,
                 password_hash=hash_password(password),
                 role=role,
+                must_change_password=must_change,
             )
         except ValueError as err:
             return jsonify({"error": str(err)}), 409
@@ -941,11 +1044,31 @@ def create_app(runtime: GatewayRuntime) -> Flask:
     def update_admin_user_endpoint(user_id: str):
         curr_user = get_current_user() or {"username": "admin", "role": "ADMIN"}
         body = request.get_json(silent=True) or {}
+
+        target_user = runtime.store.get_admin_user_by_id(user_id)
+        if not target_user:
+            return jsonify({"error": f"User not found: {user_id}", "code": "USER_NOT_FOUND"}), 404
+
         status = body.get("status")
         role = body.get("role")
+        username = body.get("username")
+        password = body.get("password")
+        must_change = body.get("must_change_password")
+
         try:
-            if status:
-                runtime.store.update_admin_user_status(user_id, status)
+            if status is not None:
+                new_status = str(status).strip().upper()
+                if new_status not in {"ACTIVE", "DISABLED"}:
+                    return jsonify({"error": f"Invalid status: {status}. Must be ACTIVE or DISABLED"}), 400
+                if target_user["role"] == "ADMIN" and new_status == "DISABLED":
+                    all_users = runtime.store.list_admin_users()
+                    active_admins = [u for u in all_users if u["role"] == "ADMIN" and u["status"] == "ACTIVE" and u["user_id"] != user_id]
+                    if not active_admins:
+                        return jsonify({
+                            "error": "Cannot disable the last active administrator account",
+                            "code": "LAST_ADMIN_PROTECTED",
+                        }), 400
+                runtime.store.update_admin_user_status(user_id, new_status)
                 runtime.store.record_audit(
                     username=curr_user["username"],
                     role=curr_user["role"],
@@ -953,11 +1076,23 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                     resource="user",
                     resource_id=user_id,
                     result="SUCCESS",
-                    details=f"User {user_id} status changed to {status}",
+                    details=f"User '{target_user['username']}' ({user_id}) status changed to {new_status}",
                     source_ip=request.remote_addr,
                 )
-            if role:
-                runtime.store.update_admin_user_role(user_id, role)
+
+            if role is not None:
+                new_role = str(role).strip().upper()
+                if new_role not in ALL_ROLES:
+                    return jsonify({"error": f"Role must be one of {ALL_ROLES}"}), 400
+                if target_user["role"] == "ADMIN" and new_role != "ADMIN":
+                    all_users = runtime.store.list_admin_users()
+                    active_admins = [u for u in all_users if u["role"] == "ADMIN" and u["status"] == "ACTIVE" and u["user_id"] != user_id]
+                    if not active_admins:
+                        return jsonify({
+                            "error": "Cannot demote the last active administrator account",
+                            "code": "LAST_ADMIN_PROTECTED",
+                        }), 400
+                runtime.store.update_admin_user_role(user_id, new_role)
                 runtime.store.record_audit(
                     username=curr_user["username"],
                     role=curr_user["role"],
@@ -965,15 +1100,137 @@ def create_app(runtime: GatewayRuntime) -> Flask:
                     resource="user",
                     resource_id=user_id,
                     result="SUCCESS",
-                    details=f"User {user_id} role changed to {role}",
+                    details=f"User '{target_user['username']}' ({user_id}) role changed to {new_role}",
                     source_ip=request.remote_addr,
                 )
+                if curr_user.get("user_id") == user_id:
+                    session["user"]["role"] = new_role
+
+            if username is not None:
+                new_username = str(username).strip()
+                if not new_username:
+                    return jsonify({"error": "Username cannot be empty"}), 400
+                old_username = target_user["username"]
+                if new_username != old_username:
+                    try:
+                        runtime.store.update_admin_user_username(user_id, new_username)
+                    except ValueError as err:
+                        return jsonify({"error": str(err), "code": "USERNAME_CONFLICT"}), 409
+                    runtime.store.record_audit(
+                        username=curr_user["username"],
+                        role=curr_user["role"],
+                        action="USER_USERNAME_CHANGED",
+                        resource="user",
+                        resource_id=user_id,
+                        result="SUCCESS",
+                        details=f"User {user_id} username changed from '{old_username}' to '{new_username}' by {curr_user['username']}",
+                        source_ip=request.remote_addr,
+                    )
+                    if curr_user.get("user_id") == user_id:
+                        session["user"]["username"] = new_username
+
+            if password is not None:
+                pw_str = str(password)
+                valid, err = validate_password_policy(pw_str)
+                if not valid:
+                    return jsonify({"error": err}), 400
+                hashed = hash_password(pw_str)
+                runtime.store.update_admin_user_password(user_id, hashed, must_change_password=True)
+                runtime.store.record_audit(
+                    username=curr_user["username"],
+                    role=curr_user["role"],
+                    action="USER_PASSWORD_RESET",
+                    resource="user",
+                    resource_id=user_id,
+                    result="SUCCESS",
+                    details=f"Administrator '{curr_user['username']}' reset password for user '{target_user['username']}' ({user_id}) with mandatory change required",
+                    source_ip=request.remote_addr,
+                )
+                if curr_user.get("user_id") == user_id:
+                    session["user"]["must_change_password"] = True
+            elif must_change is not None:
+                val = bool(must_change)
+                target = runtime.store.get_admin_user_by_id(user_id)
+                if target:
+                    runtime.store.update_admin_user_password(user_id, target["password_hash"], must_change_password=val)
+                    if curr_user.get("user_id") == user_id:
+                        session["user"]["must_change_password"] = val
+
             updated = runtime.store.get_admin_user_by_id(user_id)
             if updated:
                 updated.pop("password_hash", None)
             return jsonify(updated)
         except (KeyError, ValueError) as error:
             return jsonify({"error": str(error)}), 400
+
+    @app.delete("/api/admin/users/<user_id>")
+    @login_required
+    @roles_required(ROLE_ADMIN)
+    def delete_admin_user_endpoint(user_id: str):
+        curr_user = get_current_user() or {"username": "admin", "role": "ADMIN"}
+
+        # Prevent self-deletion
+        if curr_user.get("user_id") == user_id:
+            return jsonify({
+                "error": "Administrators cannot delete their own active account",
+                "code": "SELF_DELETION_DENIED"
+            }), 400
+
+        with _user_mutation_lock:
+            target_user = runtime.store.get_admin_user_by_id(user_id)
+            if not target_user:
+                return jsonify({"error": f"User not found: {user_id}", "code": "USER_NOT_FOUND"}), 404
+
+            if curr_user.get("username") == target_user["username"]:
+                return jsonify({
+                    "error": "Administrators cannot delete their own active account",
+                    "code": "SELF_DELETION_DENIED"
+                }), 400
+
+            # Guard against deleting the last active ADMIN account
+            if target_user["role"] == "ADMIN":
+                all_users = runtime.store.list_admin_users()
+                active_admins = [
+                    u for u in all_users
+                    if u["role"] == "ADMIN" and u["status"] == "ACTIVE" and u["user_id"] != user_id
+                ]
+                if not active_admins:
+                    return jsonify({
+                        "error": "Cannot delete the last remaining active administrator account",
+                        "code": "LAST_ADMIN_PROTECTED",
+                    }), 400
+
+            try:
+                success = runtime.store.delete_admin_user(user_id)
+            except ValueError as err:
+                if "last" in str(err).lower():
+                    return jsonify({
+                        "error": str(err),
+                        "code": "LAST_ADMIN_PROTECTED",
+                    }), 400
+                return jsonify({"error": str(err)}), 400
+            if not success:
+                return jsonify({"error": f"Failed to delete user: {user_id}", "code": "DELETE_FAILED"}), 500
+
+            runtime.store.record_audit(
+                username=curr_user["username"],
+                role=curr_user["role"],
+                action="USER_DELETED",
+                resource="user",
+                resource_id=user_id,
+                result="SUCCESS",
+                details=f"User '{target_user['username']}' ({user_id}) deleted by administrator '{curr_user['username']}'",
+                source_ip=request.remote_addr,
+            )
+
+        refreshed_users = runtime.store.list_admin_users()
+        return jsonify({
+            "ok": True,
+            "message": f"User '{target_user['username']}' deleted successfully",
+            "deleted_user_id": user_id,
+            "users": refreshed_users,
+            "count": len(refreshed_users)
+        }), 200
 
     @app.get("/api/admin/audit")
     @login_required

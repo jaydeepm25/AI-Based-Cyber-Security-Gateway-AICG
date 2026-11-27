@@ -2225,6 +2225,126 @@
 
 </div><!-- /.hmi-shell -->
 
+<!-- ===================================================== -->
+<!-- USER MANAGEMENT ENHANCEMENT: MODALS & TOASTS -->
+<!-- ===================================================== -->
+
+<!-- 1. Edit User Modal -->
+<div id="editUserModal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="editUserModalTitle">
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-title" id="editUserModalTitle">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--cyan);"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                <span>Edit User Profile</span>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeEditUserModal()" aria-label="Close modal">&times;</button>
+        </div>
+        <form id="editUserForm" onsubmit="submitEditUser(event)">
+            <input type="hidden" id="editUserId">
+            <div class="modal-body">
+                <div id="editUserMsg" class="modal-alert-box" style="display: none;"></div>
+                <div class="modal-field-group">
+                    <label class="modal-label" for="editUserIdentifier">User ID</label>
+                    <input type="text" id="editUserIdentifier" class="form-input modal-input-readonly" readonly disabled>
+                </div>
+                <div class="modal-field-group">
+                    <label class="modal-label" for="editUsername">Username</label>
+                    <input type="text" id="editUsername" class="form-input" required autocomplete="off" placeholder="Enter username">
+                    <small class="modal-hint">Must be unique across the identity registry.</small>
+                </div>
+                <div class="modal-field-group">
+                    <label class="modal-label" for="editUserRole">Assigned Role</label>
+                    <select id="editUserRole" class="form-input">
+                        <option value="OPERATOR">OPERATOR (Standard SOC Access)</option>
+                        <option value="ADMIN">ADMIN (Full Administrative Control)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-modal-cancel" onclick="closeEditUserModal()">Cancel</button>
+                <button type="submit" id="btnSaveEditUser" class="btn-modal-save">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 2. Administrative Reset Password Modal -->
+<div id="resetPasswordModal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="resetPasswordModalTitle">
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-title" id="resetPasswordModalTitle">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--amber);"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span>Administrative Password Reset</span>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeResetPasswordModal()" aria-label="Close modal">&times;</button>
+        </div>
+        <form id="resetPasswordForm" onsubmit="submitAdminPasswordReset(event)">
+            <input type="hidden" id="resetPasswordUserId">
+            <div class="modal-body">
+                <div id="resetPasswordMsg" class="modal-alert-box" style="display: none;"></div>
+                <div class="modal-info-strip">
+                    <div>Resetting credentials for: <strong id="resetPasswordTargetDisplay" style="color: var(--text-primary);">--</strong></div>
+                    <div style="font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px;">User ID: <span id="resetPasswordIdDisplay">--</span></div>
+                </div>
+                <div class="modal-field-group">
+                    <label class="modal-label" for="adminNewPassword">New Temporary Password</label>
+                    <div class="password-input-wrapper">
+                        <input type="password" id="adminNewPassword" class="form-input" required placeholder="Minimum 8 characters" autocomplete="new-password">
+                        <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('adminNewPassword', this)" title="Show/Hide Password" aria-label="Show password">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-field-group">
+                    <label class="modal-label" for="adminConfirmPassword">Confirm New Password</label>
+                    <div class="password-input-wrapper">
+                        <input type="password" id="adminConfirmPassword" class="form-input" required placeholder="Re-enter password" autocomplete="new-password">
+                        <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('adminConfirmPassword', this)" title="Show/Hide Password" aria-label="Show password">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-policy-notice">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; color: var(--amber);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span><strong>Security Policy:</strong> The user will be placed in a restricted session upon next login and will be required to choose a new password before accessing gateway services.</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-modal-cancel" onclick="closeResetPasswordModal()">Cancel</button>
+                <button type="submit" id="btnSubmitPasswordReset" class="btn-modal-danger-action btn-modal-reset">Reset Password</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 3. Delete User Confirmation Modal -->
+<div id="deleteUserModal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="deleteUserModalTitle">
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-title" id="deleteUserModalTitle" style="color: var(--red);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                <span>Confirm Account Deletion</span>
+            </div>
+            <button type="button" class="modal-close-btn" onclick="closeDeleteUserModal()" aria-label="Close modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="deleteUserMsg" class="modal-alert-box" style="display: none;"></div>
+            <div class="modal-danger-callout">
+                <p>Are you sure you want to permanently delete user <strong id="deleteTargetUsername" style="color: var(--text-primary);">--</strong> (<span id="deleteTargetUserId" style="font-family: var(--font-mono);">--</span>)?</p>
+                <p style="margin-top: 8px; font-size: 11px; color: var(--text-secondary);">This action will permanently remove this user account from the gateway identity registry. Historical administrative audit records will remain cryptographically intact. This operation cannot be undone.</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <input type="hidden" id="deleteUserId">
+            <button type="button" class="btn-modal-cancel" onclick="closeDeleteUserModal()">Cancel</button>
+            <button type="button" id="btnConfirmDeleteUser" class="btn-modal-danger-action" onclick="submitDeleteUser()">Permanently Delete User</button>
+        </div>
+    </div>
+</div>
+
+<!-- Global Notification Toast Container -->
+<div id="aicgToastContainer" class="aicg-toast-container" aria-live="polite"></div>
+
 <!-- Application Script (Zero External CDN Dependency) -->
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 

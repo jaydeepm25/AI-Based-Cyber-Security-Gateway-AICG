@@ -2792,6 +2792,10 @@ async function checkAuthStatus() {
         const res = await fetch("/api/auth/status", { cache: "no-store" });
         if (res.ok) {
             const data = await res.json();
+            if (data.authenticated && data.must_change_password) {
+                window.location.href = "/login?password_change_required=1";
+                return;
+            }
             currentAuthSession = data.authenticated ? data.user : null;
             renderAuthBadge(data);
         }
@@ -3144,25 +3148,348 @@ async function refreshAdminUsers() {
             const roleColor = u.role === "ADMIN" ? "var(--cyan)" : "var(--amber)";
             const toggleAction = isActive ? "DISABLED" : "ACTIVE";
             const toggleBtnText = isActive ? "Disable" : "Enable";
-            const toggleBtnStyle = isActive ? "background:rgba(244,63,94,0.1); border-color:rgba(244,63,94,0.3); color:var(--red);" : "background:rgba(16,185,129,0.1); border-color:rgba(16,185,129,0.3); color:var(--green);";
+            const toggleBtnClass = isActive ? "btn-user-disable" : "btn-user-enable";
+            const mustChange = Boolean(u.must_change_password);
+            const mustChangeBadge = mustChange
+                ? `<span class="tag" style="color:var(--amber); border-color:rgba(245,158,11,0.4); font-size:9px; margin-left:6px;" title="Mandatory password change required on next login">PW RESET REQ</span>`
+                : "";
 
             return `<tr>
                 <td style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${escapeHtml(u.user_id)}</td>
-                <td style="font-weight:700; color:var(--text-primary);">${escapeHtml(u.username)}</td>
+                <td style="font-weight:700; color:var(--text-primary);">
+                    ${escapeHtml(u.username)}
+                    ${mustChangeBadge}
+                </td>
                 <td><span class="tag" style="color:${roleColor}; border-color:${roleColor}55;">${escapeHtml(u.role)}</span></td>
                 <td><span class="tag" style="color:${isActive ? 'var(--green)' : 'var(--red)'}; border-color:${isActive ? 'var(--green)' : 'var(--red)'}44;">${escapeHtml(u.status)}</span></td>
                 <td><span class="tag" style="color:var(--amber); border-color:rgba(245,158,11,0.3); font-size:9px;">${escapeHtml(u.mfa_status || "SIMULATED")}</span></td>
                 <td style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${u.created_at ? u.created_at.substring(0, 10) : "--"}</td>
                 <td style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted);">${u.last_login ? u.last_login.substring(11, 19) : "Never"}</td>
                 <td>
-                    <button type="button" onclick="toggleUserStatus('${u.user_id}', '${toggleAction}')" style="padding:2px 8px; font-size:10px; border-radius:3px; cursor:pointer; ${toggleBtnStyle}">
-                        ${toggleBtnText}
-                    </button>
+                    <div class="user-action-group">
+                        <button type="button" class="btn-user-action btn-user-edit" onclick="openEditUserModal('${escapeHtml(u.user_id)}', '${escapeHtml(u.username)}', '${escapeHtml(u.role)}')" title="Edit User Profile">
+                            Edit
+                        </button>
+                        <button type="button" class="btn-user-action btn-user-reset" onclick="openResetPasswordModal('${escapeHtml(u.user_id)}', '${escapeHtml(u.username)}')" title="Reset User Password">
+                            Reset PW
+                        </button>
+                        <button type="button" class="btn-user-action ${toggleBtnClass}" onclick="toggleUserStatus('${escapeHtml(u.user_id)}', '${toggleAction}')" title="${toggleBtnText} User Account">
+                            ${toggleBtnText}
+                        </button>
+                        <button type="button" class="btn-user-action btn-user-delete" onclick="openDeleteUserModal('${escapeHtml(u.user_id)}', '${escapeHtml(u.username)}')" title="Permanently Delete User Account">
+                            Delete
+                        </button>
+                    </div>
                 </td>
             </tr>`;
         }).join("");
     } catch (e) {
         console.warn("Admin users error:", e);
+    }
+}
+
+/* ==========================================================================
+   USER MANAGEMENT ENHANCEMENT: NOTIFICATIONS, MODALS & MUTATION HANDLERS
+   ========================================================================== */
+
+function showAicgToast(message, type = "info", duration = 4000) {
+    const container = document.getElementById("aicgToastContainer");
+    if (!container) {
+        console.log(`[AICG ${type.toUpperCase()}] ${message}`);
+        return;
+    }
+
+    const toast = document.createElement("div");
+    toast.className = `aicg-toast aicg-toast-${type}`;
+
+    let iconSvg = "";
+    if (type === "success") {
+        iconSvg = `<svg class="aicg-toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`;
+    } else if (type === "error") {
+        iconSvg = `<svg class="aicg-toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`;
+    } else if (type === "warning") {
+        iconSvg = `<svg class="aicg-toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+    } else {
+        iconSvg = `<svg class="aicg-toast-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+    }
+
+    toast.innerHTML = `
+        ${iconSvg}
+        <div class="aicg-toast-body">${escapeHtml(message)}</div>
+        <button type="button" class="aicg-toast-close" aria-label="Dismiss">&times;</button>
+    `;
+
+    const closeBtn = toast.querySelector(".aicg-toast-close");
+    const removeToast = () => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(8px) scale(0.96)";
+        setTimeout(() => toast.remove(), 200);
+    };
+
+    closeBtn.addEventListener("click", removeToast);
+    container.appendChild(toast);
+
+    if (duration > 0) {
+        setTimeout(removeToast, duration);
+    }
+}
+
+function togglePasswordVisibility(inputId, btnEl) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPassword = input.type === "password";
+    input.type = isPassword ? "text" : "password";
+
+    if (btnEl) {
+        btnEl.setAttribute("aria-label", isPassword ? "Hide password" : "Show password");
+        btnEl.innerHTML = isPassword
+            ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+            : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+    }
+}
+
+/* Edit User Modal */
+function openEditUserModal(userId, username, role) {
+    const modal = document.getElementById("editUserModal");
+    if (!modal) return;
+    document.getElementById("editUserId").value = userId;
+    document.getElementById("editUserIdentifier").value = userId;
+    document.getElementById("editUsername").value = username;
+    document.getElementById("editUserRole").value = role || "OPERATOR";
+    const msg = document.getElementById("editUserMsg");
+    if (msg) {
+        msg.style.display = "none";
+        msg.textContent = "";
+        msg.className = "modal-alert-box";
+    }
+    modal.style.display = "flex";
+    setTimeout(() => document.getElementById("editUsername").focus(), 50);
+}
+
+function closeEditUserModal() {
+    const modal = document.getElementById("editUserModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function submitEditUser(event) {
+    event.preventDefault();
+    const userId = document.getElementById("editUserId").value;
+    const username = document.getElementById("editUsername").value.trim();
+    const role = document.getElementById("editUserRole").value;
+    const msg = document.getElementById("editUserMsg");
+    const saveBtn = document.getElementById("btnSaveEditUser");
+
+    if (!username) {
+        if (msg) {
+            msg.className = "modal-alert-box error";
+            msg.textContent = "Username cannot be empty.";
+            msg.style.display = "block";
+        }
+        return;
+    }
+
+    if (saveBtn) saveBtn.disabled = true;
+
+    try {
+        const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, role })
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            closeEditUserModal();
+            showAicgToast(`User profile for '${username}' updated successfully.`, "success");
+            await refreshAdminUsers();
+            await refreshAdminOverview();
+            await refreshAdminAuditLogs();
+        } else {
+            let errorText = data.error || "Failed to update user.";
+            if (res.status === 409 || data.code === "USERNAME_CONFLICT") {
+                errorText = `Username conflict: '${username}' is already in use.`;
+            } else if (data.code === "LAST_ADMIN_PROTECTED") {
+                errorText = "Action rejected: Cannot demote the last remaining active administrator account.";
+            }
+            if (msg) {
+                msg.className = "modal-alert-box error";
+                msg.textContent = errorText;
+                msg.style.display = "block";
+            }
+            showAicgToast(errorText, "error");
+        }
+    } catch (err) {
+        console.error("Edit user error:", err);
+        if (msg) {
+            msg.className = "modal-alert-box error";
+            msg.textContent = "Network error while saving user profile.";
+            msg.style.display = "block";
+        }
+        showAicgToast("Network communication error.", "error");
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+    }
+}
+
+/* Reset Password Modal */
+function openResetPasswordModal(userId, username) {
+    const modal = document.getElementById("resetPasswordModal");
+    if (!modal) return;
+    document.getElementById("resetPasswordUserId").value = userId;
+    document.getElementById("resetPasswordTargetDisplay").textContent = username;
+    document.getElementById("resetPasswordIdDisplay").textContent = userId;
+    document.getElementById("adminNewPassword").value = "";
+    document.getElementById("adminConfirmPassword").value = "";
+    const msg = document.getElementById("resetPasswordMsg");
+    if (msg) {
+        msg.style.display = "none";
+        msg.textContent = "";
+        msg.className = "modal-alert-box";
+    }
+    modal.style.display = "flex";
+    setTimeout(() => document.getElementById("adminNewPassword").focus(), 50);
+}
+
+function closeResetPasswordModal() {
+    const modal = document.getElementById("resetPasswordModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function submitAdminPasswordReset(event) {
+    event.preventDefault();
+    const userId = document.getElementById("resetPasswordUserId").value;
+    const targetUser = document.getElementById("resetPasswordTargetDisplay").textContent;
+    const newPassword = document.getElementById("adminNewPassword").value;
+    const confirmPassword = document.getElementById("adminConfirmPassword").value;
+    const msg = document.getElementById("resetPasswordMsg");
+    const submitBtn = document.getElementById("btnSubmitPasswordReset");
+
+    if (!newPassword || newPassword.length < 8) {
+        if (msg) {
+            msg.className = "modal-alert-box error";
+            msg.textContent = "New password must be at least 8 characters long.";
+            msg.style.display = "block";
+        }
+        return;
+    }
+
+    if (newPassword !== confirmPassword) {
+        if (msg) {
+            msg.className = "modal-alert-box error";
+            msg.textContent = "Password confirmation does not match.";
+            msg.style.display = "block";
+        }
+        return;
+    }
+
+    if (submitBtn) submitBtn.disabled = true;
+
+    try {
+        const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: newPassword })
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            closeResetPasswordModal();
+            showAicgToast(`Password reset successfully for '${targetUser}'. Mandatory password change enforced on next login.`, "success", 5000);
+            await refreshAdminUsers();
+            await refreshAdminAuditLogs();
+        } else {
+            const errorText = data.error || "Password reset failed.";
+            if (msg) {
+                msg.className = "modal-alert-box error";
+                msg.textContent = errorText;
+                msg.style.display = "block";
+            }
+            showAicgToast(errorText, "error");
+        }
+    } catch (err) {
+        console.error("Admin password reset error:", err);
+        if (msg) {
+            msg.className = "modal-alert-box error";
+            msg.textContent = "Gateway communication error while resetting password.";
+            msg.style.display = "block";
+        }
+        showAicgToast("Gateway communication error.", "error");
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
+    }
+}
+
+/* Delete User Modal */
+function openDeleteUserModal(userId, username) {
+    const modal = document.getElementById("deleteUserModal");
+    if (!modal) return;
+    document.getElementById("deleteUserId").value = userId;
+    document.getElementById("deleteTargetUsername").textContent = username;
+    document.getElementById("deleteTargetUserId").textContent = userId;
+    const msg = document.getElementById("deleteUserMsg");
+    if (msg) {
+        msg.style.display = "none";
+        msg.textContent = "";
+        msg.className = "modal-alert-box";
+    }
+    const confirmBtn = document.getElementById("btnConfirmDeleteUser");
+    if (confirmBtn) confirmBtn.disabled = false;
+    modal.style.display = "flex";
+}
+
+function closeDeleteUserModal() {
+    const modal = document.getElementById("deleteUserModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function submitDeleteUser() {
+    const userId = document.getElementById("deleteUserId").value;
+    const username = document.getElementById("deleteTargetUsername").textContent;
+    const msg = document.getElementById("deleteUserMsg");
+    const confirmBtn = document.getElementById("btnConfirmDeleteUser");
+
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    try {
+        const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+            method: "DELETE"
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+            closeDeleteUserModal();
+            showAicgToast(`User account '${username}' (${userId}) deleted successfully.`, "success");
+            await refreshAdminUsers();
+            await refreshAdminOverview();
+            await refreshAdminAuditLogs();
+        } else {
+            let errorText = data.error || "User deletion failed.";
+            if (data.code === "SELF_DELETION_DENIED") {
+                errorText = "Self-Deletion Denied: Administrators cannot delete their own active account.";
+            } else if (data.code === "LAST_ADMIN_PROTECTED") {
+                errorText = "Last-Admin Protected: Cannot delete the last remaining active administrator account.";
+            } else if (res.status === 403) {
+                errorText = "Forbidden: Administrator role required to delete user accounts.";
+            } else if (res.status === 404) {
+                errorText = "User not found or already deleted.";
+            }
+            if (msg) {
+                msg.className = "modal-alert-box error";
+                msg.textContent = errorText;
+                msg.style.display = "block";
+            }
+            showAicgToast(errorText, "error");
+        }
+    } catch (err) {
+        console.error("Delete user error:", err);
+        if (msg) {
+            msg.className = "modal-alert-box error";
+            msg.textContent = "Gateway communication error while deleting user.";
+            msg.style.display = "block";
+        }
+        showAicgToast("Gateway communication error.", "error");
+    } finally {
+        if (confirmBtn) confirmBtn.disabled = false;
     }
 }
 
@@ -3183,6 +3510,17 @@ async function submitCreateUser() {
             msg.style.color = "var(--red)";
             msg.textContent = "Username and password required.";
         }
+        showAicgToast("Username and password are required.", "warning");
+        return;
+    }
+
+    if (pass.length < 8) {
+        if (msg) {
+            msg.style.display = "block";
+            msg.style.color = "var(--red)";
+            msg.textContent = "Password must be at least 8 characters long.";
+        }
+        showAicgToast("Password must be at least 8 characters long.", "warning");
         return;
     }
 
@@ -3197,38 +3535,48 @@ async function submitCreateUser() {
             document.getElementById("newLabUsername").value = "";
             document.getElementById("newLabPassword").value = "";
             toggleAddUserForm();
+            showAicgToast(`User '${user}' created successfully with role ${role}.`, "success");
             await refreshAdminUsers();
             await refreshAdminOverview();
             await refreshAdminAuditLogs();
         } else {
+            const errorText = data.error || "User creation failed.";
             if (msg) {
                 msg.style.display = "block";
                 msg.style.color = "var(--red)";
-                msg.textContent = data.error || "User creation failed.";
+                msg.textContent = errorText;
             }
+            showAicgToast(errorText, "error");
         }
     } catch (e) {
         console.error("Create user error:", e);
+        showAicgToast("Network error while creating user.", "error");
     }
 }
 
 async function toggleUserStatus(userId, newStatus) {
     try {
-        const res = await fetch(`/api/admin/users/${userId}`, {
+        const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ status: newStatus })
         });
         if (res.ok) {
+            showAicgToast(`User account status updated to ${newStatus}.`, "success");
             await refreshAdminUsers();
             await refreshAdminOverview();
             await refreshAdminAuditLogs();
         } else {
             const err = await res.json();
-            alert(`Status change failed: ${err.error || "Permission denied"}`);
+            let errorText = err.error || "Status update failed.";
+            if (err.code === "LAST_ADMIN_PROTECTED") {
+                errorText = "Action rejected: Cannot disable the last remaining active administrator account.";
+            }
+            showAicgToast(errorText, "error");
         }
     } catch (e) {
         console.error("Toggle user status error:", e);
+        showAicgToast("Network error while updating user status.", "error");
     }
 }
 
@@ -3348,6 +3696,17 @@ window.acknowledgeAlert = acknowledgeAlert;
 window.toggleAddUserForm = toggleAddUserForm;
 window.submitCreateUser = submitCreateUser;
 window.toggleUserStatus = toggleUserStatus;
+window.openEditUserModal = openEditUserModal;
+window.closeEditUserModal = closeEditUserModal;
+window.submitEditUser = submitEditUser;
+window.openResetPasswordModal = openResetPasswordModal;
+window.closeResetPasswordModal = closeResetPasswordModal;
+window.submitAdminPasswordReset = submitAdminPasswordReset;
+window.openDeleteUserModal = openDeleteUserModal;
+window.closeDeleteUserModal = closeDeleteUserModal;
+window.submitDeleteUser = submitDeleteUser;
+window.togglePasswordVisibility = togglePasswordVisibility;
+window.showAicgToast = showAicgToast;
 window.filterAuditTable = filterAuditTable;
 window.refreshAuditLogs = refreshAdminAuditLogs;
 window.checkAuditIntegrity = checkAuditIntegrity;

@@ -49,87 +49,160 @@
                 <div class="auth-subtitle login-subtitle">Industrial SOC &amp; OT Operations Console</div>
             </div>
 
-            <!-- Scope & Safety Badge -->
-            <div class="auth-scope-strip login-scope-banner">
-                <span class="auth-status-dot"></span>
-                <span>LOCAL LAB IDENTITY • SIMULATED MFA • DRY_RUN</span>
-            </div>
+            <!-- View 1: Standard Login Form & Demo Credentials -->
+            <div id="loginViewWrapper">
+                <!-- Scope & Safety Badge -->
+                <div class="auth-scope-strip login-scope-banner">
+                    <span class="auth-status-dot"></span>
+                    <span>LOCAL LAB IDENTITY • SIMULATED MFA • DRY_RUN</span>
+                </div>
 
-            <!-- Form Body -->
-            <div class="auth-body login-body">
-                <div id="loginStatusMsg" class="auth-status-box login-msg-box" role="alert"></div>
+                <!-- Form Body -->
+                <div class="auth-body login-body">
+                    <div id="loginStatusMsg" class="auth-status-box login-msg-box" role="alert"></div>
 
-                <form id="loginForm" onsubmit="handleLoginSubmit(event)" autocomplete="off">
-                    <div class="auth-form-group form-group">
-                        <div class="auth-label-row">
-                            <label class="auth-label form-label" for="username">Username / Operator Identity</label>
-                        </div>
-                        <input type="text" id="username" name="username" class="auth-input form-input" placeholder="admin or operator" required autofocus autocomplete="username">
-                    </div>
-
-                    <div class="auth-form-group form-group">
-                        <div class="auth-label-row">
-                            <label class="auth-label form-label" for="password">Password</label>
-                        </div>
-                        <input type="password" id="password" name="password" class="auth-input form-input" placeholder="••••••••••••" required autocomplete="current-password">
-                    </div>
-
-                    <!-- Progressive-Disclosure Simulated MFA Drawer (starts hidden on fresh page load) -->
-                    <div class="auth-mfa-drawer mfa-box" id="mfaContainer" style="display: none;">
-                        <div class="auth-mfa-header mfa-box-title">
-                            <span class="auth-mfa-title">
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                                </svg>
-                                Simulated MFA Token
-                            </span>
-                            <span class="auth-mfa-badge tag">SIMULATED MFA</span>
-                        </div>
-                        <div class="auth-mfa-hint mfa-hint">
-                            Zero-Trust verification step. Enter laboratory verification token: <strong>123456</strong>
-                        </div>
-                        <input type="text" id="mfaCode" name="mfa_code" class="auth-mfa-input mfa-input" placeholder="123456" maxlength="6" autocomplete="one-time-code">
-                    </div>
-
-                    <button type="submit" id="loginSubmitBtn" class="auth-submit-btn btn-login-submit">
-                        Authenticate Gateway Session
-                    </button>
-                </form>
-
-                <!-- Demonstration Lab Credentials -->
-                <div class="auth-persona-section login-demo-helper">
-                    <div class="auth-persona-header helper-title">
-                        <span class="auth-persona-title">Demonstration Lab Accounts</span>
-                        <span class="tag" style="color:var(--text-muted); border-color:var(--border-subtle);">LOCAL LAB</span>
-                    </div>
-                    <div class="auth-persona-grid helper-buttons">
-                        <!-- Card 1: Administrator (No password displayed, no quick fill) -->
-                        <div class="auth-persona-tile" id="cardAdmin" style="cursor: default;" title="Administrator Account">
-                            <div class="auth-persona-top">
-                                <span class="auth-persona-name qf-role">Administrator</span>
-                                <span class="auth-persona-tag admin">ADMIN</span>
+                    <form id="loginForm" onsubmit="handleLoginSubmit(event)" autocomplete="off">
+                        <div class="auth-form-group form-group">
+                            <div class="auth-label-row">
+                                <label class="auth-label form-label" for="username">Username / Operator Identity</label>
                             </div>
-                            <div class="auth-persona-creds qf-creds">Username: admin</div>
-                            <div class="auth-persona-creds qf-creds" style="color: var(--text-dim); font-size: 9.5px;">Password: [Protected]</div>
-                            <div style="font-size: 9px; color: var(--text-dim); margin-top: auto; padding-top: 4px;">Manual credential entry</div>
+                            <input type="text" id="username" name="username" class="auth-input form-input" placeholder="admin or operator" required autofocus autocomplete="username">
                         </div>
 
-                        <!-- Card 2: Operator (operator1 / Operator@AICG2026! with Quick Fill) -->
-                        <div class="auth-persona-tile" id="cardOperator" style="cursor: default;" title="Demonstration Operator Account">
-                            <div class="auth-persona-top">
-                                <span class="auth-persona-name qf-role">Operator</span>
-                                <span class="auth-persona-tag operator">OPERATOR</span>
+                        <div class="auth-form-group form-group">
+                            <div class="auth-label-row">
+                                <label class="auth-label form-label" for="password">Password</label>
                             </div>
-                            <div class="auth-persona-creds qf-creds">Username: operator1</div>
-                            <div class="auth-persona-creds qf-creds">Password: Operator@AICG2026!</div>
-                            <button type="button" class="btn-quick-fill-action" id="btnQuickOperator" onclick="quickFillOperator()" title="Quick Fill Operator Credentials">
-                                Quick Fill
-                            </button>
+                            <div class="password-input-wrapper">
+                                <input type="password" id="password" name="password" class="auth-input form-input" placeholder="••••••••••••" required autocomplete="current-password">
+                                <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('password', this)" title="Show/Hide Password" aria-label="Show password">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Progressive-Disclosure Simulated MFA Drawer (starts hidden on fresh page load) -->
+                        <div class="auth-mfa-drawer mfa-box" id="mfaContainer" style="display: none;">
+                            <div class="auth-mfa-header mfa-box-title">
+                                <span class="auth-mfa-title">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                    </svg>
+                                    Simulated MFA Token
+                                </span>
+                                <span class="auth-mfa-badge tag">SIMULATED MFA</span>
+                            </div>
+                            <div class="auth-mfa-hint mfa-hint">
+                                Zero-Trust verification step. Enter laboratory verification token: <strong>123456</strong>
+                            </div>
+                            <input type="text" id="mfaCode" name="mfa_code" class="auth-mfa-input mfa-input" placeholder="123456" maxlength="6" autocomplete="one-time-code">
+                        </div>
+
+                        <button type="submit" id="loginSubmitBtn" class="auth-submit-btn btn-login-submit">
+                            Authenticate Gateway Session
+                        </button>
+                    </form>
+
+                    <!-- Demonstration Lab Credentials -->
+                    <div class="auth-persona-section login-demo-helper">
+                        <div class="auth-persona-header helper-title">
+                            <span class="auth-persona-title">Demonstration Lab Accounts</span>
+                            <span class="tag" style="color:var(--text-muted); border-color:var(--border-subtle);">LOCAL LAB</span>
+                        </div>
+                        <div class="auth-persona-grid helper-buttons">
+                            <!-- Card 1: Administrator (No password displayed, no quick fill) -->
+                            <div class="auth-persona-tile" id="cardAdmin" style="cursor: default;" title="Administrator Account">
+                                <div class="auth-persona-top">
+                                    <span class="auth-persona-name qf-role">Administrator</span>
+                                    <span class="auth-persona-tag admin">ADMIN</span>
+                                </div>
+                                <div class="auth-persona-creds qf-creds">Username: admin</div>
+                                <div class="auth-persona-creds qf-creds" style="color: var(--text-dim); font-size: 9.5px;">Password: [Protected]</div>
+                                <div style="font-size: 9px; color: var(--text-dim); margin-top: auto; padding-top: 4px;">Manual credential entry</div>
+                            </div>
+
+                            <!-- Card 2: Operator (operator1 / Operator@AICG2026! with Quick Fill) -->
+                            <div class="auth-persona-tile" id="cardOperator" style="cursor: default;" title="Demonstration Operator Account">
+                                <div class="auth-persona-top">
+                                    <span class="auth-persona-name qf-role">Operator</span>
+                                    <span class="auth-persona-tag operator">OPERATOR</span>
+                                </div>
+                                <div class="auth-persona-creds qf-creds">Username: operator1</div>
+                                <div class="auth-persona-creds qf-creds">Password: Operator@AICG2026!</div>
+                                <button type="button" class="btn-quick-fill-action" id="btnQuickOperator" onclick="quickFillOperator()" title="Quick Fill Operator Credentials">
+                                    Quick Fill
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            <!-- View 2: Dedicated Mandatory Password Change Interface (Restricted Session) -->
+            <div id="mandatoryPasswordChangeWrapper" style="display: none;">
+                <!-- Scope & Alert Banner -->
+                <div class="auth-scope-strip login-scope-banner" style="background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3); color: var(--amber);">
+                    <span class="auth-status-dot" style="background: var(--amber);"></span>
+                    <span>MANDATORY PASSWORD CHANGE REQUIRED</span>
+                </div>
+
+                <div class="auth-body login-body">
+                    <div id="passwordChangeStatusMsg" class="auth-status-box login-msg-box" role="alert" style="display: none;"></div>
+
+                    <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.45; background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 10px 12px;">
+                        An administrator has initiated a password reset for account <strong id="pwdChangeUsernameDisplay" style="color: var(--text-primary); font-family: var(--font-mono);">--</strong>. You must establish a new secure private password before console access is granted.
+                    </div>
+
+                    <form id="passwordChangeForm" onsubmit="handlePasswordChangeSubmit(event)" autocomplete="off">
+                        <div class="auth-form-group form-group">
+                            <div class="auth-label-row">
+                                <label class="auth-label form-label" for="currentPassword">Current Temporary Password</label>
+                            </div>
+                            <div class="password-input-wrapper">
+                                <input type="password" id="currentPassword" name="current_password" class="auth-input form-input" placeholder="Enter temporary password" required autocomplete="current-password">
+                                <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('currentPassword', this)" title="Show/Hide Password" aria-label="Show password">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="auth-form-group form-group">
+                            <div class="auth-label-row">
+                                <label class="auth-label form-label" for="newPassword">New Password</label>
+                            </div>
+                            <div class="password-input-wrapper">
+                                <input type="password" id="newPassword" name="new_password" class="auth-input form-input" placeholder="Minimum 8 characters" required autocomplete="new-password">
+                                <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('newPassword', this)" title="Show/Hide Password" aria-label="Show password">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            </div>
+                            <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Policy requirement: At least 8 characters. Must not match current password.</div>
+                        </div>
+
+                        <div class="auth-form-group form-group">
+                            <div class="auth-label-row">
+                                <label class="auth-label form-label" for="confirmPassword">Confirm New Password</label>
+                            </div>
+                            <div class="password-input-wrapper">
+                                <input type="password" id="confirmPassword" name="confirm_password" class="auth-input form-input" placeholder="Re-enter new password" required autocomplete="new-password">
+                                <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('confirmPassword', this)" title="Show/Hide Password" aria-label="Show password">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button type="submit" id="changePasswordSubmitBtn" class="auth-submit-btn btn-login-submit" style="margin-top: 10px;">
+                            Update Password &amp; Proceed to Console
+                        </button>
+
+                        <button type="button" class="btn-cancel-auth" onclick="cancelPasswordChangeAndSignOut()" style="margin-top: 8px; width: 100%; padding: 8px; background: transparent; border: 1px solid var(--border-medium); color: var(--text-secondary); border-radius: var(--radius-sm); font-size: 11px; cursor: pointer; transition: all 0.15s ease;">
+                            Cancel &amp; Sign Out
+                        </button>
+                    </form>
+                </div>
+            </div>
+
         </div>
 
         <!-- Honesty & Scope Footer -->
@@ -150,6 +223,154 @@ function quickFillOperator() {
         msg.className = "auth-status-box success login-msg-box";
         msg.textContent = "Populated Operator demonstration credentials (operator1). Click 'Authenticate Gateway Session' to proceed.";
         msg.style.display = "block";
+    }
+}
+
+function togglePasswordVisibility(inputId, btnEl) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const isPassword = input.type === "password";
+    input.type = isPassword ? "text" : "password";
+
+    if (btnEl) {
+        btnEl.setAttribute("aria-label", isPassword ? "Hide password" : "Show password");
+        btnEl.innerHTML = isPassword
+            ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`
+            : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+    }
+}
+
+function showMandatoryPasswordChangeView(username) {
+    const loginWrapper = document.getElementById("loginViewWrapper");
+    const pwdWrapper = document.getElementById("mandatoryPasswordChangeWrapper");
+    const userDisplay = document.getElementById("pwdChangeUsernameDisplay");
+    const msg = document.getElementById("passwordChangeStatusMsg");
+
+    if (loginWrapper) loginWrapper.style.display = "none";
+    if (pwdWrapper) pwdWrapper.style.display = "block";
+    if (userDisplay) userDisplay.textContent = username || "Operator";
+    if (msg) {
+        msg.className = "auth-status-box warning login-msg-box";
+        msg.textContent = "Temporary credentials verified. A private password change is mandatory before accessing console services.";
+        msg.style.display = "block";
+    }
+    const currentInput = document.getElementById("currentPassword");
+    if (currentInput) {
+        currentInput.value = "";
+        currentInput.focus();
+    }
+    const newPassInput = document.getElementById("newPassword");
+    if (newPassInput) newPassInput.value = "";
+    const confirmPassInput = document.getElementById("confirmPassword");
+    if (confirmPassInput) confirmPassInput.value = "";
+}
+
+function showLoginView() {
+    const loginWrapper = document.getElementById("loginViewWrapper");
+    const pwdWrapper = document.getElementById("mandatoryPasswordChangeWrapper");
+    if (loginWrapper) loginWrapper.style.display = "block";
+    if (pwdWrapper) pwdWrapper.style.display = "none";
+}
+
+async function cancelPasswordChangeAndSignOut() {
+    try {
+        await fetch("/api/auth/logout", { method: "POST" });
+    } catch (e) {
+        console.warn("Logout error:", e);
+    }
+    showLoginView();
+    const msg = document.getElementById("loginStatusMsg");
+    if (msg) {
+        msg.className = "auth-status-box info login-msg-box";
+        msg.textContent = "Session terminated. Enter credentials to log in.";
+        msg.style.display = "block";
+    }
+}
+
+async function handlePasswordChangeSubmit(event) {
+    event.preventDefault();
+    const submitBtn = document.getElementById("changePasswordSubmitBtn");
+    const msg = document.getElementById("passwordChangeStatusMsg");
+    const currentPassword = document.getElementById("currentPassword").value;
+    const newPassword = document.getElementById("newPassword").value;
+    const confirmPassword = document.getElementById("confirmPassword").value;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+        msg.className = "auth-status-box error login-msg-box";
+        msg.textContent = "All password fields are required.";
+        msg.style.display = "block";
+        return;
+    }
+
+    if (newPassword.length < 8) {
+        msg.className = "auth-status-box error login-msg-box";
+        msg.textContent = "New password must be at least 8 characters long.";
+        msg.style.display = "block";
+        return;
+    }
+
+    if (newPassword !== confirmPassword) {
+        msg.className = "auth-status-box error login-msg-box";
+        msg.textContent = "New password and confirmation do not match.";
+        msg.style.display = "block";
+        return;
+    }
+
+    if (newPassword === currentPassword) {
+        msg.className = "auth-status-box error login-msg-box";
+        msg.textContent = "New password cannot be identical to the temporary current password.";
+        msg.style.display = "block";
+        return;
+    }
+
+    msg.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Updating password...";
+
+    try {
+        const res = await fetch("/api/auth/change-password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                current_password: currentPassword,
+                new_password: newPassword
+            })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.ok) {
+            msg.className = "auth-status-box success login-msg-box";
+            msg.textContent = "Password updated successfully! Elevating gateway session and entering console...";
+            msg.style.display = "block";
+            // Clear inputs
+            document.getElementById("currentPassword").value = "";
+            document.getElementById("newPassword").value = "";
+            document.getElementById("confirmPassword").value = "";
+            setTimeout(() => {
+                const params = new URLSearchParams(window.location.search);
+                window.location.href = params.get("next") || "/";
+            }, 500);
+            return;
+        }
+
+        // Error handling
+        msg.className = "auth-status-box error login-msg-box";
+        let errMsg = data.error || "Password change failed.";
+        if (data.code === "INVALID_CURRENT_PASSWORD") {
+            errMsg = "The current temporary password entered is incorrect.";
+        } else if (data.code === "PASSWORD_REUSED") {
+            errMsg = "New password cannot be the same as the current password.";
+        }
+        msg.textContent = errMsg;
+        msg.style.display = "block";
+    } catch (err) {
+        msg.className = "auth-status-box error login-msg-box";
+        msg.textContent = "Gateway communication error while updating password.";
+        msg.style.display = "block";
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Update Password & Proceed to Console";
     }
 }
 
@@ -180,6 +401,11 @@ async function handleLoginSubmit(event) {
         const data = await res.json();
 
         if (res.ok && data.ok) {
+            if (data.must_change_password) {
+                showMandatoryPasswordChangeView(data.user?.username || username);
+                return;
+            }
+
             msg.className = "auth-status-box success login-msg-box";
             msg.textContent = `Authenticated as ${data.user.username} (${data.user.role}). Redirecting to HMI console...`;
             msg.style.display = "block";
@@ -223,6 +449,26 @@ async function handleLoginSubmit(event) {
         submitBtn.textContent = "Authenticate Gateway Session";
     }
 }
+
+// On page load: check auth status for restricted sessions or existing sessions
+document.addEventListener("DOMContentLoaded", async () => {
+    try {
+        const res = await fetch("/api/auth/status", { cache: "no-store" });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.authenticated) {
+                if (data.must_change_password) {
+                    showMandatoryPasswordChangeView(data.user?.username || "");
+                } else {
+                    const params = new URLSearchParams(window.location.search);
+                    window.location.href = params.get("next") || "/";
+                }
+            }
+        }
+    } catch (e) {
+        // Not logged in or network error, stay on login view
+    }
+});
 </script>
 
 </body>

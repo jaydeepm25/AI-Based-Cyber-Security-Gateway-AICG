@@ -86,6 +86,15 @@ def verify_password(plaintext: str, password_hash: str) -> bool:
     return check_password_hash(password_hash, plaintext)
 
 
+def validate_password_policy(plaintext: str) -> tuple[bool, str | None]:
+    """Validate password complexity against administrative security baseline."""
+    if not plaintext or not isinstance(plaintext, str):
+        return False, "Password is required"
+    if len(plaintext) < 8:
+        return False, "Password must be at least 8 characters long"
+    return True, None
+
+
 def verify_simulated_mfa(token: str) -> bool:
     """Constant-time validation of simulated MFA token."""
     if not token:
@@ -140,6 +149,7 @@ def set_pre_mfa_user(user: dict[str, Any] | str, role: str = ROLE_OPERATOR) -> N
             "user_id": f"USR-{user.upper()}",
             "username": user,
             "role": role,
+            "must_change_password": False,
             "timestamp": time.time(),
         }
     else:
@@ -147,6 +157,7 @@ def set_pre_mfa_user(user: dict[str, Any] | str, role: str = ROLE_OPERATOR) -> N
             "user_id": user.get("user_id", f"USR-{user.get('username', 'UNKNOWN').upper()}"),
             "username": user["username"],
             "role": user.get("role", role),
+            "must_change_password": bool(user.get("must_change_password", False)),
             "timestamp": time.time(),
         }
 
@@ -175,6 +186,22 @@ def get_current_user() -> dict[str, Any] | None:
     if not user.get("authenticated"):
         return None
     return user
+
+
+RESTRICTED_SESSION_ALLOWED_PATHS = {
+    "/api/auth/change-password",
+    "/api/auth/status",
+    "/logout",
+    "/api/auth/logout",
+    "/login",
+}
+
+
+def is_restricted_session_blocked(user: dict[str, Any]) -> bool:
+    """Check if the session is restricted due to mandatory password change requirement."""
+    if not user.get("must_change_password"):
+        return False
+    return request.path not in RESTRICTED_SESSION_ALLOWED_PATHS
 
 
 def _log_security_audit(username: str, role: str, action: str, details: str) -> None:
@@ -217,6 +244,20 @@ def login_required(f: Callable[..., Any]) -> Callable[..., Any]:
                     "authenticated": False,
                 }), 401
             return redirect(f"/login?next={request.path}")
+        if is_restricted_session_blocked(user):
+            _log_security_audit(
+                user.get("username", "unknown"),
+                user.get("role", "UNKNOWN"),
+                "ACCESS_DENIED",
+                f"Access blocked for {request.method} {request.path}: mandatory password change required",
+            )
+            if request.path.startswith("/api/") or request.path == "/events":
+                return jsonify({
+                    "error": "Password change required before accessing gateway services",
+                    "code": "PASSWORD_CHANGE_REQUIRED",
+                    "must_change_password": True,
+                }), 403
+            return redirect("/login?password_change_required=1")
         return f(*args, **kwargs)
     return decorated
 
@@ -241,6 +282,20 @@ def roles_required(*roles: str) -> Callable[..., Any]:
                         "authenticated": False,
                     }), 401
                 return redirect(f"/login?next={request.path}")
+            if is_restricted_session_blocked(user):
+                _log_security_audit(
+                    user.get("username", "unknown"),
+                    user.get("role", "UNKNOWN"),
+                    "ACCESS_DENIED",
+                    f"Access blocked for {request.method} {request.path}: mandatory password change required",
+                )
+                if request.path.startswith("/api/") or request.path == "/events":
+                    return jsonify({
+                        "error": "Password change required before accessing gateway services",
+                        "code": "PASSWORD_CHANGE_REQUIRED",
+                        "must_change_password": True,
+                    }), 403
+                return redirect("/login?password_change_required=1")
             user_role = str(user.get("role", "")).upper()
             allowed = [r.upper() for r in roles]
             if user_role not in allowed:
@@ -280,6 +335,20 @@ def permission_required(permission: str) -> Callable[..., Any]:
                         "authenticated": False,
                     }), 401
                 return redirect(f"/login?next={request.path}")
+            if is_restricted_session_blocked(user):
+                _log_security_audit(
+                    user.get("username", "unknown"),
+                    user.get("role", "UNKNOWN"),
+                    "ACCESS_DENIED",
+                    f"Access blocked for {request.method} {request.path}: mandatory password change required",
+                )
+                if request.path.startswith("/api/") or request.path == "/events":
+                    return jsonify({
+                        "error": "Password change required before accessing gateway services",
+                        "code": "PASSWORD_CHANGE_REQUIRED",
+                        "must_change_password": True,
+                    }), 403
+                return redirect("/login?password_change_required=1")
             user_role = str(user.get("role", "")).upper()
             if not has_permission(user_role, permission):
                 _log_security_audit(

@@ -53,6 +53,9 @@ GENESIS_HASH = "0" * 64
 # Deterministic 64-bit integer advisory lock key for audit chain serialization:
 # ASCII for "AICG_AUD" -> 0x414943475F415544 = 4704337229774636356
 AICG_AUDIT_ADVISORY_LOCK_ID = 0x414943475F415544
+# Deterministic 64-bit integer advisory lock key for cross-process user mutation serialization:
+# ASCII for "AICG_USR" -> 0x414943475F555352 = 4704337229774640466
+AICG_USER_MUTATION_ADVISORY_LOCK_ID = 0x414943475F555352
 
 
 class BaseGatewayStore(ABC):
@@ -149,7 +152,15 @@ class BaseGatewayStore(ABC):
         ...
 
     @abstractmethod
-    def create_admin_user(self, username: str, password_hash: str, role: str, status: str = "ACTIVE", mfa_enabled: int = 1) -> dict[str, Any]:
+    def create_admin_user(
+        self,
+        username: str,
+        password_hash: str,
+        role: str,
+        status: str = "ACTIVE",
+        mfa_enabled: int = 1,
+        must_change_password: bool | int = False,
+    ) -> dict[str, Any]:
         ...
 
     @abstractmethod
@@ -158,6 +169,23 @@ class BaseGatewayStore(ABC):
 
     @abstractmethod
     def update_admin_user_role(self, user_id: str, role: str) -> dict[str, Any]:
+        ...
+
+    @abstractmethod
+    def update_admin_user_password(
+        self,
+        user_id: str,
+        password_hash: str,
+        must_change_password: bool | int | None = None,
+    ) -> dict[str, Any]:
+        ...
+
+    @abstractmethod
+    def update_admin_user_username(self, user_id: str, new_username: str) -> dict[str, Any]:
+        ...
+
+    @abstractmethod
+    def delete_admin_user(self, user_id: str) -> bool:
         ...
 
     @abstractmethod
@@ -373,9 +401,12 @@ class GatewayStore(BaseGatewayStore):
     def get_admin_user(self, username: str) -> dict[str, Any] | None: ...
     def get_admin_user_by_id(self, user_id: str) -> dict[str, Any] | None: ...
     def list_admin_users(self) -> list[dict[str, Any]]: ...
-    def create_admin_user(self, username: str, password_hash: str, role: str, status: str = "ACTIVE", mfa_enabled: int = 1) -> dict[str, Any]: ...
+    def create_admin_user(self, username: str, password_hash: str, role: str, status: str = "ACTIVE", mfa_enabled: int = 1, must_change_password: bool | int = False) -> dict[str, Any]: ...
     def update_admin_user_status(self, user_id: str, status: str) -> dict[str, Any]: ...
     def update_admin_user_role(self, user_id: str, role: str) -> dict[str, Any]: ...
+    def update_admin_user_password(self, user_id: str, password_hash: str, must_change_password: bool | int | None = None) -> dict[str, Any]: ...
+    def update_admin_user_username(self, user_id: str, new_username: str) -> dict[str, Any]: ...
+    def delete_admin_user(self, user_id: str) -> bool: ...
     def record_admin_login(self, username: str) -> None: ...
     def get_alert(self, alert_id: str) -> dict[str, Any] | None: ...
     def get_alert_by_incident(self, incident_id: str) -> dict[str, Any] | None: ...
@@ -494,7 +525,8 @@ class SQLiteGatewayStore(GatewayStore):
                 CREATE TABLE IF NOT EXISTS admin_users (
                     user_id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
                     role TEXT NOT NULL, status TEXT NOT NULL, mfa_enabled INTEGER NOT NULL DEFAULT 1,
-                    mfa_status TEXT NOT NULL DEFAULT 'SIMULATED_VERIFIED', created_at TEXT NOT NULL, last_login TEXT
+                    mfa_status TEXT NOT NULL DEFAULT 'SIMULATED_VERIFIED', created_at TEXT NOT NULL, last_login TEXT,
+                    must_change_password INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE INDEX IF NOT EXISTS admin_users_username_idx ON admin_users(username);
                 CREATE TABLE IF NOT EXISTS admin_alerts (
@@ -533,6 +565,10 @@ class SQLiteGatewayStore(GatewayStore):
 
     def _migrate_schema(self, con: sqlite3.Connection) -> None:
         """Backward-compatible schema migration for existing SQLite databases."""
+        user_cols = [r["name"] for r in con.execute("PRAGMA table_info(admin_users)").fetchall()]
+        if "must_change_password" not in user_cols:
+            con.execute("ALTER TABLE admin_users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0")
+
         audit_cols = [r["name"] for r in con.execute("PRAGMA table_info(admin_audit_log)").fetchall()]
         if "prev_hash" not in audit_cols:
             con.execute(f"ALTER TABLE admin_audit_log ADD COLUMN prev_hash TEXT DEFAULT '{GENESIS_HASH}'")
@@ -590,8 +626,8 @@ class SQLiteGatewayStore(GatewayStore):
             user_id = f"USR-ADMIN-{uuid4().hex[:8].upper()}"
             hashed = hash_password(self.initial_admin_password.strip())
             con.execute(
-                "INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login) VALUES (?,?,?,?,?,?,?,?,?)",
-                (user_id, admin_user, hashed, "ADMIN", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None)
+                "INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login, must_change_password) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (user_id, admin_user, hashed, "ADMIN", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None, 0)
             )
         else:
             if self.allow_demo_accounts:
@@ -599,12 +635,12 @@ class SQLiteGatewayStore(GatewayStore):
                 admin_user = (self.initial_admin_username or "admin").strip()
                 operator_pw = os.getenv("AEGIS_INITIAL_OPERATOR_PASSWORD", "Operator@AICG2026!").strip()
                 defaults = [
-                    ("USR-ADMIN-01", admin_user, hash_password(admin_pw), "ADMIN", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None),
-                    ("USR-OPERATOR-01", "operator", hash_password(operator_pw), "OPERATOR", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None),
+                    ("USR-ADMIN-01", admin_user, hash_password(admin_pw), "ADMIN", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None, 0),
+                    ("USR-OPERATOR-01", "operator", hash_password(operator_pw), "OPERATOR", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None, 0),
                 ]
                 for row in defaults:
                     con.execute(
-                        "INSERT OR IGNORE INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login) VALUES (?,?,?,?,?,?,?,?,?)",
+                        "INSERT OR IGNORE INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login, must_change_password) VALUES (?,?,?,?,?,?,?,?,?,?)",
                         row
                     )
 
@@ -888,26 +924,50 @@ class SQLiteGatewayStore(GatewayStore):
     def get_admin_user(self, username: str) -> dict[str, Any] | None:
         with self.connection() as con:
             row = con.execute("SELECT * FROM admin_users WHERE username = ?", (username,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        item = dict(row)
+        if "must_change_password" in item:
+            item["must_change_password"] = bool(item["must_change_password"])
+        return item
 
     def get_admin_user_by_id(self, user_id: str) -> dict[str, Any] | None:
         with self.connection() as con:
             row = con.execute("SELECT * FROM admin_users WHERE user_id = ?", (user_id,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        item = dict(row)
+        if "must_change_password" in item:
+            item["must_change_password"] = bool(item["must_change_password"])
+        return item
 
     def list_admin_users(self) -> list[dict[str, Any]]:
         with self.connection() as con:
-            rows = con.execute("SELECT user_id, username, role, status, mfa_enabled, mfa_status, created_at, last_login FROM admin_users ORDER BY created_at ASC").fetchall()
-        return [dict(row) for row in rows]
+            rows = con.execute("SELECT user_id, username, role, status, mfa_enabled, mfa_status, created_at, last_login, must_change_password FROM admin_users ORDER BY created_at ASC").fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["must_change_password"] = bool(item.get("must_change_password", False))
+            result.append(item)
+        return result
 
-    def create_admin_user(self, username: str, password_hash: str, role: str, status: str = "ACTIVE", mfa_enabled: int = 1) -> dict[str, Any]:
+    def create_admin_user(
+        self,
+        username: str,
+        password_hash: str,
+        role: str,
+        status: str = "ACTIVE",
+        mfa_enabled: int = 1,
+        must_change_password: bool | int = False,
+    ) -> dict[str, Any]:
         user_id = f"USR-{uuid4().hex[:8].upper()}"
         now = utc_now()
+        must_change_val = 1 if must_change_password else 0
         try:
             with self.connection() as con:
                 con.execute(
-                    "INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login) VALUES (?,?,?,?,?,?,?,?,?)",
-                    (user_id, username, password_hash, role.upper(), status.upper(), mfa_enabled, "SIMULATED_VERIFIED", now, None)
+                    "INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login, must_change_password) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (user_id, username, password_hash, role.upper(), status.upper(), mfa_enabled, "SIMULATED_VERIFIED", now, None, must_change_val)
                 )
         except sqlite3.IntegrityError as err:
             raise ValueError(f"Username '{username}' already exists") from err
@@ -920,6 +980,7 @@ class SQLiteGatewayStore(GatewayStore):
             "mfa_status": "SIMULATED_VERIFIED",
             "created_at": now,
             "last_login": None,
+            "must_change_password": bool(must_change_val),
         }
 
     def update_admin_user_status(self, user_id: str, status: str) -> dict[str, Any]:
@@ -927,6 +988,17 @@ class SQLiteGatewayStore(GatewayStore):
         if status not in {"ACTIVE", "DISABLED"}:
             raise ValueError(f"Invalid status: {status}")
         with self.connection() as con:
+            con.execute("BEGIN IMMEDIATE")
+            target = con.execute("SELECT role, status FROM admin_users WHERE user_id = ?", (user_id,)).fetchone()
+            if not target:
+                raise KeyError(f"User not found: {user_id}")
+            if target["role"] == "ADMIN" and target["status"] == "ACTIVE" and status == "DISABLED":
+                rem = con.execute(
+                    "SELECT COUNT(*) as cnt FROM admin_users WHERE role = 'ADMIN' AND status = 'ACTIVE' AND user_id != ?",
+                    (user_id,)
+                ).fetchone()
+                if rem["cnt"] == 0:
+                    raise ValueError("Cannot disable the last active administrator account")
             con.execute("UPDATE admin_users SET status = ? WHERE user_id = ?", (status, user_id))
         user = self.get_admin_user_by_id(user_id)
         if not user:
@@ -939,12 +1011,91 @@ class SQLiteGatewayStore(GatewayStore):
         if role not in {"ADMIN", "OPERATOR"}:
             raise ValueError(f"Invalid role: {role}")
         with self.connection() as con:
+            con.execute("BEGIN IMMEDIATE")
+            target = con.execute("SELECT role, status FROM admin_users WHERE user_id = ?", (user_id,)).fetchone()
+            if not target:
+                raise KeyError(f"User not found: {user_id}")
+            if target["role"] == "ADMIN" and target["status"] == "ACTIVE" and role != "ADMIN":
+                rem = con.execute(
+                    "SELECT COUNT(*) as cnt FROM admin_users WHERE role = 'ADMIN' AND status = 'ACTIVE' AND user_id != ?",
+                    (user_id,)
+                ).fetchone()
+                if rem["cnt"] == 0:
+                    raise ValueError("Cannot demote the last active administrator account")
             con.execute("UPDATE admin_users SET role = ? WHERE user_id = ?", (role, user_id))
         user = self.get_admin_user_by_id(user_id)
         if not user:
             raise KeyError(f"User not found: {user_id}")
         user.pop("password_hash", None)
         return user
+
+    def update_admin_user_password(
+        self,
+        user_id: str,
+        password_hash: str,
+        must_change_password: bool | int | None = None,
+    ) -> dict[str, Any]:
+        if not password_hash or not isinstance(password_hash, str) or not password_hash.strip():
+            raise ValueError("Password hash is required")
+        user = self.get_admin_user_by_id(user_id)
+        if not user:
+            raise KeyError(f"User not found: {user_id}")
+        with self.connection() as con:
+            if must_change_password is not None:
+                val = 1 if must_change_password else 0
+                con.execute(
+                    "UPDATE admin_users SET password_hash = ?, must_change_password = ? WHERE user_id = ?",
+                    (password_hash, val, user_id),
+                )
+            else:
+                con.execute(
+                    "UPDATE admin_users SET password_hash = ? WHERE user_id = ?",
+                    (password_hash, user_id),
+                )
+        updated = self.get_admin_user_by_id(user_id)
+        if not updated:
+            raise KeyError(f"User not found: {user_id}")
+        updated.pop("password_hash", None)
+        return updated
+
+    def update_admin_user_username(self, user_id: str, new_username: str) -> dict[str, Any]:
+        new_username = str(new_username).strip()
+        if not new_username:
+            raise ValueError("Username cannot be empty")
+        user = self.get_admin_user_by_id(user_id)
+        if not user:
+            raise KeyError(f"User not found: {user_id}")
+        if user["username"] == new_username:
+            user.pop("password_hash", None)
+            return user
+        try:
+            with self.connection() as con:
+                con.execute("UPDATE admin_users SET username = ? WHERE user_id = ?", (new_username, user_id))
+        except sqlite3.IntegrityError as err:
+            raise ValueError(f"Username '{new_username}' already exists") from err
+        updated = self.get_admin_user_by_id(user_id)
+        if not updated:
+            raise KeyError(f"User not found: {user_id}")
+        updated.pop("password_hash", None)
+        return updated
+
+    def delete_admin_user(self, user_id: str) -> bool:
+        if not user_id:
+            return False
+        with self.connection() as con:
+            con.execute("BEGIN IMMEDIATE")
+            target = con.execute("SELECT role, status FROM admin_users WHERE user_id = ?", (user_id,)).fetchone()
+            if not target:
+                return False
+            if target["role"] == "ADMIN" and target["status"] == "ACTIVE":
+                rem = con.execute(
+                    "SELECT COUNT(*) as cnt FROM admin_users WHERE role = 'ADMIN' AND status = 'ACTIVE' AND user_id != ?",
+                    (user_id,)
+                ).fetchone()
+                if rem["cnt"] == 0:
+                    raise ValueError("Cannot delete the last remaining active administrator account")
+            cursor = con.execute("DELETE FROM admin_users WHERE user_id = ?", (user_id,))
+            return cursor.rowcount > 0
 
     def record_admin_login(self, username: str) -> None:
         now = utc_now()
@@ -1540,7 +1691,8 @@ class PostgresGatewayStore(GatewayStore):
             mfa_enabled INTEGER NOT NULL DEFAULT 1,
             mfa_status TEXT NOT NULL DEFAULT 'SIMULATED_VERIFIED',
             created_at TEXT NOT NULL,
-            last_login TEXT
+            last_login TEXT,
+            must_change_password BOOLEAN NOT NULL DEFAULT FALSE
         );
         CREATE INDEX IF NOT EXISTS admin_users_username_idx ON admin_users(username);
 
@@ -1601,6 +1753,7 @@ class PostgresGatewayStore(GatewayStore):
         with self.connection() as con:
             with con.cursor() as cur:
                 cur.execute(ddl)
+                cur.execute("ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;")
             self._seed_default_users(con)
             self._seed_default_device_identities(con)
 
@@ -1627,11 +1780,11 @@ class PostgresGatewayStore(GatewayStore):
                 hashed = hash_password(self.initial_admin_password.strip())
                 cur.execute(
                     """
-                    INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login, must_change_password)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (user_id) DO NOTHING;
                     """,
-                    (user_id, admin_user, hashed, "ADMIN", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None)
+                    (user_id, admin_user, hashed, "ADMIN", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None, False)
                 )
             else:
                 if self.allow_demo_accounts:
@@ -1639,14 +1792,14 @@ class PostgresGatewayStore(GatewayStore):
                     admin_user = (self.initial_admin_username or "admin").strip()
                     operator_pw = os.getenv("AEGIS_INITIAL_OPERATOR_PASSWORD", "Operator@AICG2026!").strip()
                     defaults = [
-                        ("USR-ADMIN-01", admin_user, hash_password(admin_pw), "ADMIN", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None),
-                        ("USR-OPERATOR-01", "operator", hash_password(operator_pw), "OPERATOR", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None),
+                        ("USR-ADMIN-01", admin_user, hash_password(admin_pw), "ADMIN", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None, False),
+                        ("USR-OPERATOR-01", "operator", hash_password(operator_pw), "OPERATOR", "ACTIVE", 1, "SIMULATED_VERIFIED", now, None, False),
                     ]
                     for u_row in defaults:
                         cur.execute(
                             """
-                            INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login, must_change_password)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (user_id) DO NOTHING;
                             """,
                             u_row
@@ -2057,34 +2210,58 @@ class PostgresGatewayStore(GatewayStore):
             with con.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM admin_users WHERE username = %s;", (username,))
                 row = cur.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        item = dict(row)
+        if "must_change_password" in item:
+            item["must_change_password"] = bool(item["must_change_password"])
+        return item
 
     def get_admin_user_by_id(self, user_id: str) -> dict[str, Any] | None:
         with self.connection() as con:
             with con.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute("SELECT * FROM admin_users WHERE user_id = %s;", (user_id,))
                 row = cur.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        item = dict(row)
+        if "must_change_password" in item:
+            item["must_change_password"] = bool(item["must_change_password"])
+        return item
 
     def list_admin_users(self) -> list[dict[str, Any]]:
         with self.connection() as con:
             with con.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("SELECT user_id, username, role, status, mfa_enabled, mfa_status, created_at, last_login FROM admin_users ORDER BY created_at ASC;")
+                cur.execute("SELECT user_id, username, role, status, mfa_enabled, mfa_status, created_at, last_login, must_change_password FROM admin_users ORDER BY created_at ASC;")
                 rows = cur.fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["must_change_password"] = bool(item.get("must_change_password", False))
+            result.append(item)
+        return result
 
-    def create_admin_user(self, username: str, password_hash: str, role: str, status: str = "ACTIVE", mfa_enabled: int = 1) -> dict[str, Any]:
+    def create_admin_user(
+        self,
+        username: str,
+        password_hash: str,
+        role: str,
+        status: str = "ACTIVE",
+        mfa_enabled: int = 1,
+        must_change_password: bool | int = False,
+    ) -> dict[str, Any]:
         user_id = f"USR-{uuid4().hex[:8].upper()}"
         now = utc_now()
+        must_change_val = bool(must_change_password)
         try:
             with self.connection() as con:
                 with con.cursor() as cur:
                     cur.execute(
                         """
-                        INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                        INSERT INTO admin_users (user_id, username, password_hash, role, status, mfa_enabled, mfa_status, created_at, last_login, must_change_password)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
                         """,
-                        (user_id, username, password_hash, role.upper(), status.upper(), mfa_enabled, "SIMULATED_VERIFIED", now, None)
+                        (user_id, username, password_hash, role.upper(), status.upper(), mfa_enabled, "SIMULATED_VERIFIED", now, None, must_change_val)
                     )
         except Exception as err:
             if (psycopg2 and isinstance(err, psycopg2.IntegrityError)) or "unique" in str(err).lower() or "admin_users_username" in str(err).lower():
@@ -2099,6 +2276,7 @@ class PostgresGatewayStore(GatewayStore):
             "mfa_status": "SIMULATED_VERIFIED",
             "created_at": now,
             "last_login": None,
+            "must_change_password": must_change_val,
         }
 
     def update_admin_user_status(self, user_id: str, status: str) -> dict[str, Any]:
@@ -2106,7 +2284,20 @@ class PostgresGatewayStore(GatewayStore):
         if status not in {"ACTIVE", "DISABLED"}:
             raise ValueError(f"Invalid status: {status}")
         with self.connection() as con:
-            with con.cursor() as cur:
+            with con.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(%s);", (AICG_USER_MUTATION_ADVISORY_LOCK_ID,))
+                cur.execute("SELECT role, status FROM admin_users WHERE user_id = %s FOR UPDATE;", (user_id,))
+                target = cur.fetchone()
+                if not target:
+                    raise KeyError(f"User not found: {user_id}")
+                if target["role"] == "ADMIN" and target["status"] == "ACTIVE" and status == "DISABLED":
+                    cur.execute(
+                        "SELECT COUNT(*) as cnt FROM admin_users WHERE role = 'ADMIN' AND status = 'ACTIVE' AND user_id != %s;",
+                        (user_id,)
+                    )
+                    rem = cur.fetchone()
+                    if rem and rem["cnt"] == 0:
+                        raise ValueError("Cannot disable the last active administrator account")
                 cur.execute("UPDATE admin_users SET status = %s WHERE user_id = %s;", (status, user_id))
         user = self.get_admin_user_by_id(user_id)
         if not user:
@@ -2119,13 +2310,101 @@ class PostgresGatewayStore(GatewayStore):
         if role not in {"ADMIN", "OPERATOR"}:
             raise ValueError(f"Invalid role: {role}")
         with self.connection() as con:
-            with con.cursor() as cur:
+            with con.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(%s);", (AICG_USER_MUTATION_ADVISORY_LOCK_ID,))
+                cur.execute("SELECT role, status FROM admin_users WHERE user_id = %s FOR UPDATE;", (user_id,))
+                target = cur.fetchone()
+                if not target:
+                    raise KeyError(f"User not found: {user_id}")
+                if target["role"] == "ADMIN" and target["status"] == "ACTIVE" and role != "ADMIN":
+                    cur.execute(
+                        "SELECT COUNT(*) as cnt FROM admin_users WHERE role = 'ADMIN' AND status = 'ACTIVE' AND user_id != %s;",
+                        (user_id,)
+                    )
+                    rem = cur.fetchone()
+                    if rem and rem["cnt"] == 0:
+                        raise ValueError("Cannot demote the last active administrator account")
                 cur.execute("UPDATE admin_users SET role = %s WHERE user_id = %s;", (role, user_id))
         user = self.get_admin_user_by_id(user_id)
         if not user:
             raise KeyError(f"User not found: {user_id}")
         user.pop("password_hash", None)
         return user
+
+    def update_admin_user_password(
+        self,
+        user_id: str,
+        password_hash: str,
+        must_change_password: bool | int | None = None,
+    ) -> dict[str, Any]:
+        if not password_hash or not isinstance(password_hash, str) or not password_hash.strip():
+            raise ValueError("Password hash is required")
+        user = self.get_admin_user_by_id(user_id)
+        if not user:
+            raise KeyError(f"User not found: {user_id}")
+        with self.connection() as con:
+            with con.cursor() as cur:
+                if must_change_password is not None:
+                    val = bool(must_change_password)
+                    cur.execute(
+                        "UPDATE admin_users SET password_hash = %s, must_change_password = %s WHERE user_id = %s;",
+                        (password_hash, val, user_id),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE admin_users SET password_hash = %s WHERE user_id = %s;",
+                        (password_hash, user_id),
+                    )
+        updated = self.get_admin_user_by_id(user_id)
+        if not updated:
+            raise KeyError(f"User not found: {user_id}")
+        updated.pop("password_hash", None)
+        return updated
+
+    def update_admin_user_username(self, user_id: str, new_username: str) -> dict[str, Any]:
+        new_username = str(new_username).strip()
+        if not new_username:
+            raise ValueError("Username cannot be empty")
+        user = self.get_admin_user_by_id(user_id)
+        if not user:
+            raise KeyError(f"User not found: {user_id}")
+        if user["username"] == new_username:
+            user.pop("password_hash", None)
+            return user
+        try:
+            with self.connection() as con:
+                with con.cursor() as cur:
+                    cur.execute("UPDATE admin_users SET username = %s WHERE user_id = %s;", (new_username, user_id))
+        except Exception as err:
+            if (psycopg2 and isinstance(err, psycopg2.IntegrityError)) or "unique" in str(err).lower() or "admin_users_username" in str(err).lower():
+                raise ValueError(f"Username '{new_username}' already exists") from err
+            raise
+        updated = self.get_admin_user_by_id(user_id)
+        if not updated:
+            raise KeyError(f"User not found: {user_id}")
+        updated.pop("password_hash", None)
+        return updated
+
+    def delete_admin_user(self, user_id: str) -> bool:
+        if not user_id:
+            return False
+        with self.connection() as con:
+            with con.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(%s);", (AICG_USER_MUTATION_ADVISORY_LOCK_ID,))
+                cur.execute("SELECT role, status FROM admin_users WHERE user_id = %s FOR UPDATE;", (user_id,))
+                target = cur.fetchone()
+                if not target:
+                    return False
+                if target["role"] == "ADMIN" and target["status"] == "ACTIVE":
+                    cur.execute(
+                        "SELECT COUNT(*) as cnt FROM admin_users WHERE role = 'ADMIN' AND status = 'ACTIVE' AND user_id != %s;",
+                        (user_id,)
+                    )
+                    rem = cur.fetchone()
+                    if rem and rem["cnt"] == 0:
+                        raise ValueError("Cannot delete the last remaining active administrator account")
+                cur.execute("DELETE FROM admin_users WHERE user_id = %s;", (user_id,))
+                return cur.rowcount > 0
 
     def record_admin_login(self, username: str) -> None:
         now = utc_now()
